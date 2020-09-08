@@ -1,0 +1,10 @@
+figure.figsize                : 4.72, 2.93    ## 12 cm, 12/1.618 cm (golden ratio)
+figure.dpi                    : 109           ## screen resolution of iMAC at work
+figure.constrained_layout.use : True
+axes.labelsize                : medium
+xtick.labelsize               : small
+ytick.labelsize               : small
+lines.linewidth               : 1.5
+savefig.dpi                   : 300
+
+animation.html                : jshtml
