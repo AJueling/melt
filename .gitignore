@@ -1,3 +1,8 @@
+.DS_Store
+src/.DS_Store
+src/ipynb/*  # notebook containing output cells
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
