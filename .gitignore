@@ -1,7 +1,7 @@
 .DS_Store
 src/.DS_Store
 src/ipynb  # notebook containing output cells
-src/ipynb/Plume.ipynb
+src/ipynb/*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
