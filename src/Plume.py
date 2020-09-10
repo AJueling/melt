@@ -3,7 +3,7 @@ import xarray as xr
 
 class PlumeModel(object):
     """ plume melt model analytical solution
-    based on Lazerom et al. (2018)
+    based on Lazeroms et al. (2018)
     melt plume driven by the ice pump circulation
     assumes: small angle
     equation and table numbers refer to publication (doi: 10.1175/JPO-D-18-0131.1)
