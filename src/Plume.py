@@ -1,47 +1,34 @@
 import numpy as np
 import xarray as xr
 
-class PlumeModel(object):
+from constants import ModelConstants
+
+
+class PlumeModel(ModelConstants):
     """ plume melt model analytical solution
-    based on Lazeroms et al. (2018)
-    melt plume driven by the ice pump circulation
-    assumes: small angle
-    equation and table numbers refer to publication (doi: 10.1175/JPO-D-18-0131.1)
-    
-    input:
-    X   ..  [m]     distance from grounding line
-    zb  ..  [m]     ice shelf depth
-    Ta  ..  [degC]  ambient temperature
-    Ta  ..  [psu]   ambient salinity
-    
-    output:  [calling `.compute()`]
-    ds  ..  xarray Dataset holding all quantities with their coordinates
+        based on Lazeroms et al. (2018)
+        melt plume driven by the ice pump circulation
+        assumes: small angle
+        equation and table numbers refer to publication (doi: 10.1175/JPO-D-18-0131.1)
+        
+        input:
+        X   ..  [m]     distance from grounding line
+        zb  ..  [m]     ice shelf depth
+        Ta  ..  [degC]  ambient temperature
+        Ta  ..  [psu]   ambient salinity
+        
+        output:  [calling `.compute()`]
+        ds  ..  xarray Dataset holding all quantities with their coordinates
     """
     
     def __init__(self, X, zb, Ta, Sa):
+        ModelConstants.__init__(self)
         assert len(X)==len(zb)
         assert X[0]==0  # (starting at grounding line)
         self.X  = X
         self.Ta = Ta
         self.Sa = Sa
-        
         N   = len(X)
-
-        # parameters (from Table 1)
-        self.l1  = -5.73e-2  # [degC]      freezing point salinity coefficient
-        self.l2  = 8.32e-2   # [degC]      freezing point offset
-        self.l3  = 7.61e-4   # [degC/m]    freezing point depth coefficient
-        self.Ce  = 0.6       # [1]         slope correction factor
-        self.E0  = 3.6e-2    # [1]         entrainment coefficient
-        self.CG  = 5.9e-4    # [1]         effective thermal Stanton number
-        self.ct  = 1.4e-5    # [1]         c_{tau}
-        self.L   = 3.35e5    # [J/kg]      Latent heat of fusion for ice
-        self.g   = 9.81      # [m/s^2]     gravitational acceleration
-        self.c   = 3.974e3   # [J/kg/degC] specific heat capacity of ocean
-        self.bs  = 7.86e-4   # [1/psu]     haline coontraction coefficient 
-        self.Cd  = 2.5e-3    # [1]         drag coefficient
-        self.cr1 = 2e2       # [1]         c_{\rho 1}
-        
         # geometry and dependent variables
         zgl = zb[0]  # grounding line depth [m]
         self.Tf0 = self.l1*self.Sa + self.l2 + self.l3*zgl
@@ -59,7 +46,7 @@ class PlumeModel(object):
              (1+self.Ce*(self.Ea/(self.CG+self.ct+self.Ea))**(3/4))
             
         # reused parameter combinations
-        self.f1 = self.bs*self.Sa*self.g/(self.l3*(self.L/self.c)**3)
+        self.f1 = self.bs*self.Sa*self.g/(self.l3*(self.L/self.cp)**3)
         self.f2 = (1-self.cr1*self.CG)/(self.Cd+self.Ea)
         self.f3 = self.CG*self.Ea/(self.CG+self.ct*self.Ea)
         
@@ -72,19 +59,18 @@ class PlumeModel(object):
         self.ds = xr.Dataset(data_vars, coords=coords)
         return
         
-        
     def nondim_M(self, x):
         """ nondimensional melt rate, eqn. (26)
         input:  x .. nondimensional locations, either x or x_ 
         """
         return (3*(1-x)**(4/3)-1)*np.sqrt(1-(1-x)**(4/3))/(2*np.sqrt(2))
     
-    
     def dim_M(self):
-        """ dimensional melt rate in [m/yr], eqn. (28a); needs nondimensional melt rate at x_ """
+        """ dimensional melt rate in [m/yr], eqn. (28a)
+        needs nondimensional melt rate at x_
+        """
         assert 'M_' in self.ds
         return np.sqrt(self.f1*self.f2*self.f3**3)*(self.Ta-self.Tf0)**2*self.ds['M_']
-    
     
     def phi0(self, x):
         """ non-dimensional cavity circulation, eqn. (25) """
@@ -94,10 +80,9 @@ class PlumeModel(object):
         """ dimensional cavity circulation, eqn. (29) """
         return self.E0*np.sqrt(self.f1*self.f2*self.f3)*(self.Ta-self.Tf0)**2*self.ds['phi0_']
     
-    
-    def compute(self):
+    def compute_plume(self):
         """ combines all output into single xarray dataset """
-        # calcultions
+        # calculations
         self.ds['M']  = ('x' , self.nondim_M(self.ds.x))
         self.ds['M_'] = ('x_', self.nondim_M(self.ds.x_))
         self.ds['m']  = ('X' , self.dim_M())
