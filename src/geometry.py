@@ -292,7 +292,7 @@ class ModelGeometry(object):
     ### PICOP methods
     def select_velocity(self):
         """ selects the appropriate domain """
-        self.vel = xr.open_dataset('/Users/Andre/Downloads/antarctic_ice_vel_phase_map_v01.nc').sel(self.lim)
+        self.vel = xr.open_dataset(fn_IceVelocity).sel(self.lim)
         return
 
     def interpolate_velocity(self):
@@ -301,7 +301,11 @@ class ModelGeometry(object):
         """
         # create new lat/lon coords for velocity data
         regridder = xe.Regridder(self.vel, self.ds, 'bilinear')
-
+        u = regridder(self.vel.VX)
+        v = regridder(self.vel.VY)
+        u.name = 'u'
+        v.name = 'v'
+        self.ds = xr.merge([self.ds, u, v])
         return
 
     def calc_alpha(self):
@@ -315,15 +319,14 @@ class ModelGeometry(object):
         u  .. x-velocity
         v  .. y-velocity
         """
-        fn_ = f'../results/PICOP/{self.name}.nc'
-        if os.path.exists(fn_):
-            self.ds = xr.open_dataset(fn_)
+        if os.path.exists(self.fn_PICOP):
+            self.ds = xr.open_dataset(self.fn_PICOP)
         else:
             self.PICO()  # create all fields for PICO
             self.select_velocity()
             self.interpolate_velocity()
             self.calc_alpha()
-            self.ds.to_netcdf(fn_)
+            self.ds.to_netcdf(self.fn_PICOP)
         return self.ds
 
     def plot_PICOP(self):
