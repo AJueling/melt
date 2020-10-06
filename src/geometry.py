@@ -5,18 +5,44 @@ import xesmf as xe
 import pyproj
 import xarray as xr
 import pandas as pd
+import rioxarray
+import geopandas
 import matplotlib
 import matplotlib.pyplot as plt
 
-data_folder = '/Users/Andre/Downloads'
-melt_folder = '/Users/Andre/git/melt'
-fn_BedMachine = f'{data_folder}/BedMachineAntarctica_2019-11-05_v01.nc'
-fn_IceVelocity = f'{data_folder}/antarctic_ice_vel_phase_map_v01.nc'
+from shapely.geometry import mapping
 
+fn_BedMachine = f'../data/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
+fn_IceVelocity = f'../data/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
+fn_IceVelocity_remapped = f'../data/IceVelocity/IceVelocity_remapped_v01.nc'
 
-xlim = {'Totten': slice(2.19e6,2.322e6),
+glaciers = ['Lambert',
+            'Totten',
+            'MoscowUniversity',
+            'Ross',
+            'Dotson', 
+            'Thwaites',
+            'PineIsland',
+            'FilchnerRonne',
+           ]
+
+xlim = {'Lambert'       : slice( 1.66e6, 2.25e6),
+        'Totten'        : slice( 2.19e6, 2.322e6),
+        'Moscow'        : slice( 2.14e6, 2.20e6),
+        'Ross'          : slice(-0.60e6, 0.40e6),
+        'Dotson'        : slice(-1.60e6,-1.48e6),
+        'Thwaites'      : slice(-1.61e6,-1.51e6),
+        'Pine_Island'   : slice(-1.69e6,-1.56e6),
+        'Filchner_Ronne': slice(-1.50e6,-0.50e6),
        }
-ylim = {'Totten': slice(-1e6,-1.3e6),
+ylim = {'Lambert'       : slice( 8.45e5, 6.00e5),
+        'Totten'        : slice(-1.00e6,-1.30e6),
+        'Moscow'        : slice(-1.20e6,-1.38e6),
+        'Ross'          : slice(-4.35e5,-1.37e6),
+        'Dotson'        : slice(-5.31e5,-6.98e5),
+        'Thwaites'      : slice(-3.99e5,-4.85e5),
+        'Pine_Island'   : slice(-2.53e5,-3.65e5),
+        'Filchner_Ronne': slice( 1.04e6, 1.34e5),
        }
 grll = {'Totten': [(2.1937e6,-1.2807e6),
                    (2.2077e6,-1.2057e6), 
@@ -43,21 +69,30 @@ class ModelGeometry(object):
         name .. name of ice shelf
         n    .. number of boxes in PICO model
         """
-        assert name in ['Totten']
+        assert name in glaciers
         self.name = name
-        if name not in grll.keys() and name not in isfl.keys():
-            raise ValueError(f'{name} ice shelf limits not implemented yet')
-        self.lim = {'x':xlim[name], 'y':ylim[name]}
         if n is None:
             self.n = 3
-        self.fn_PICO = f'{melt_folder}/results/PICO/{self.name}.nc'
-        self.fn_PICOP = f'{melt_folder}/results/PICO/{self.name}.nc'
+        self.fn_PICO = f'../results/PICO/{name}.nc'
+        self.fn_PICOP = f'../results/PICO/{name}.nc'
+        self.fn_isf = f'../data/mask_polygons/{name}_isf.geojson'
+        self.fn_grl = f'../data/mask_polygons/{name}_grl.geojson'
+        self.fn_outline = f'../data/mask_polygons/{name}_polygon.geojson'
+        for fn in [self.fn_outline, self.fn_grl, self.fn_isf]:
+            assert os.path.exists(fn), f'file does not exists:  {fn}'
         return
     
     ### PICO methods
     def select_geometry(self):
-        """ selects the appropriate domain of BedMachine dataset """
-        self.ds = xr.open_dataset(fn_BedMachine).sel(self.lim)
+        """ selects the appropriate domain of BedMachine dataset 
+        the polygon stored in the .geojson was created in QGIS
+        """
+        ds = xr.open_dataset(fn_BedMachine)
+        ds = ds.rio.set_spatial_dims(x_dim='x', y_dim='y')
+        ds = ds.rio.write_crs('epsg:3031')
+        poly = geopandas.read_file(self.fn_outline, crs='espg:3031')
+        self.clipped = ds.mask.rio.clip(poly.geometry.apply(mapping), poly.crs, drop=True)
+        self.ds = ds.where(self.clipped)
         return
 
     def calc_draft(self):
@@ -69,26 +104,33 @@ class ModelGeometry(object):
 
     def determine_grl_isf(self):
         """ add ice shelf, grounding line, and ice shelf masks to self.ds """
-        grl = xr.where(self.ds.mask-self.ds.mask.shift(x= 1)==1, self.ds.mask, 0) + \
-              xr.where(self.ds.mask-self.ds.mask.shift(x=-1)==1, self.ds.mask, 0) + \
-              xr.where(self.ds.mask-self.ds.mask.shift(y= 1)==1, self.ds.mask, 0) + \
-              xr.where(self.ds.mask-self.ds.mask.shift(y=-1)==1, self.ds.mask, 0)
-        grl = grl/grl
-        grl.name = 'grl'
-        if self.name in grll.keys():
-            grl = ModelGeometry.remove_points(grl, grll[self.name], direction=ldir[self.name][0])
-        grl = grl.fillna(0)
+        mask = self.ds.mask
+        mask = mask.fillna(0)
 
-        isf = xr.where(self.ds.mask-self.ds.mask.shift(x= 1)==3, self.ds.mask, 0) + \
-              xr.where(self.ds.mask-self.ds.mask.shift(x=-1)==3, self.ds.mask, 0) + \
-              xr.where(self.ds.mask-self.ds.mask.shift(y= 1)==3, self.ds.mask, 0) + \
-              xr.where(self.ds.mask-self.ds.mask.shift(y=-1)==3, self.ds.mask, 0)
-        isf = isf/isf
-        isf.name = 'isf'
-        if self.name in isfl.keys():
-            isf = ModelGeometry.remove_points(isf, isfl[self.name], direction=ldir[self.name][1])
-        isf = isf.fillna(0)
+        def find_grl_isf(line):
+            """ finds mask boundaries and selects points within polygon in geojson files """
+            assert line in ['grl', 'isf']
+            if line=='grl':    diff, fn = 1, self.fn_grl
+            elif line=='isf':  diff, fn = 3, self.fn_isf
+            poly = geopandas.read_file(fn, crs='espg:3031')
+            new = xr.where(mask-mask.shift(x= 1)==diff, mask, 0) + \
+                  xr.where(mask-mask.shift(x=-1)==diff, mask, 0) + \
+                  xr.where(mask-mask.shift(y= 1)==diff, mask, 0) + \
+                  xr.where(mask-mask.shift(y=-1)==diff, mask, 0)
+            new = new/new
+            new.name = line
+            new = new.rio.set_spatial_dims(x_dim='x', y_dim='y')
+            new = new.rio.write_crs('epsg:3031')
+            new = new.rio.clip(poly.geometry.apply(mapping), poly.crs, drop=False)
+            new = new.fillna(0)
+            return new
 
+        grl  = find_grl_isf('grl')
+        isf  = find_grl_isf('isf')
+        # print(self.ds)
+        # print(grl)
+        # print(isf)
+        # now new `mask`: ice shelf = 1, rest = 0
         mask = xr.where(self.ds['mask']==3, 1, 0)
         self.ds = self.ds.drop('mask')
         self.ds = xr.merge([self.ds, mask, grl, isf])
@@ -239,6 +281,7 @@ class ModelGeometry(object):
         if os.path.exists(self.fn_PICO):
             self.ds = xr.open_dataset(self.fn_PICO)
         else:
+            print(f'\n --- {self.name} ---\n')
             print('self.select_geometry()')
             self.select_geometry()
 
@@ -246,7 +289,6 @@ class ModelGeometry(object):
             self.calc_draft()
 
             print('self.determine_grl_isf()')
-            # print(self.ds)
             self.determine_grl_isf()
 
             print('self.find_distances()')
@@ -261,7 +303,7 @@ class ModelGeometry(object):
             print('self.calc_area()')
             self.calc_area()
 
-            print('self.ds.to_netcdf(self.fn_PICO)')
+            # print('self.ds.to_netcdf(self.fn_PICO)')
             self.ds.to_netcdf(self.fn_PICO)
         return self.ds
 
@@ -292,20 +334,33 @@ class ModelGeometry(object):
     ### PICOP methods
     def select_velocity(self):
         """ selects the appropriate domain """
-        self.vel = xr.open_dataset(fn_IceVelocity).sel(self.lim)
+        self.vel = xr.open_dataset(fn_IceVelocity).where(self.ds)
         return
 
     def interpolate_velocity(self):
         """ interpolates 450 m spaced velocity onto geometry (500 m spaced) grid 
         add new velocity fields (`u` and `v`) to dataset `self.ds`
+        interpolation
         """
-        # create new lat/lon coords for velocity data
-        regridder = xe.Regridder(self.vel, self.ds, 'bilinear')
-        u = regridder(self.vel.VX)
-        v = regridder(self.vel.VY)
-        u.name = 'u'
-        v.name = 'v'
-        self.ds = xr.merge([self.ds, u, v])
+        if os.path.exists(fn_IceVelocity_remapped):
+            vel = xr.open_dataset(fn_IceVelocity_remapped)
+        else:  
+            ds  = xr.open_dataset(fn_BedMachine)
+            vel = xr.open_dataset(fn_IceVelocity)
+
+            # create new lat/lon coords for dataset `ds`
+            project = pyproj.Proj("epsg:3031")
+            xx, yy = np.meshgrid(ds.x, ds.y)
+            lons, lats = project(xx, yy, inverse=True)
+            dims = ['y','x']
+            ds = ds.assign_coords({'lat':(dims,lats), 'lon':(dims,lons)})
+
+            regridder = xe.Regridder(self.vel, self.ds, 'bilinear')
+            u = regridder(self.vel.VX)
+            v = regridder(self.vel.VY)
+            u.name = 'u'
+            v.name = 'v'
+        self.ds = xr.merge([self.ds, vel.u, vel.v])
         return
 
     def calc_alpha(self):
@@ -323,8 +378,8 @@ class ModelGeometry(object):
             self.ds = xr.open_dataset(self.fn_PICOP)
         else:
             self.PICO()  # create all fields for PICO
-            self.select_velocity()
             self.interpolate_velocity()
+            self.select_velocity()
             self.calc_alpha()
             self.ds.to_netcdf(self.fn_PICOP)
         return self.ds
@@ -342,4 +397,5 @@ class ModelGeometry(object):
 
 if __name__=='__main__':
     """ calculate the Totten IS example """
-    ModelGeometry(name='Totten').PICO()
+    for glacier in glaciers:
+        ModelGeometry(name=glacier).PICO()
