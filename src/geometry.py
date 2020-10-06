@@ -12,9 +12,16 @@ import matplotlib.pyplot as plt
 
 from shapely.geometry import mapping
 
-fn_BedMachine = f'../data/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
-fn_IceVelocity = f'../data/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
-fn_IceVelocity_remapped = f'../data/IceVelocity/IceVelocity_remapped_v01.nc'
+if sys.platform=='darwin':  # my macbook
+    data = '/Users/Andre/git/melt/data'
+    results = '/Users/Andre/git/melt/results'
+elif sys.platform=='linux':  # cartesius
+    data = '/home/ajueling/melt/data'
+    results = '/home/ajueling/melt/results'
+
+fn_BedMachine = f'{data}/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
+fn_IceVelocity = f'{data}/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
+fn_IceVelocity_remapped = f'{data}/IceVelocity/IceVelocity_remapped_v01.nc'
 
 glaciers = ['Lambert',
             'Totten',
@@ -25,41 +32,6 @@ glaciers = ['Lambert',
             'PineIsland',
             'FilchnerRonne',
            ]
-
-xlim = {'Lambert'       : slice( 1.66e6, 2.25e6),
-        'Totten'        : slice( 2.19e6, 2.322e6),
-        'Moscow'        : slice( 2.14e6, 2.20e6),
-        'Ross'          : slice(-0.60e6, 0.40e6),
-        'Dotson'        : slice(-1.60e6,-1.48e6),
-        'Thwaites'      : slice(-1.61e6,-1.51e6),
-        'Pine_Island'   : slice(-1.69e6,-1.56e6),
-        'Filchner_Ronne': slice(-1.50e6,-0.50e6),
-       }
-ylim = {'Lambert'       : slice( 8.45e5, 6.00e5),
-        'Totten'        : slice(-1.00e6,-1.30e6),
-        'Moscow'        : slice(-1.20e6,-1.38e6),
-        'Ross'          : slice(-4.35e5,-1.37e6),
-        'Dotson'        : slice(-5.31e5,-6.98e5),
-        'Thwaites'      : slice(-3.99e5,-4.85e5),
-        'Pine_Island'   : slice(-2.53e5,-3.65e5),
-        'Filchner_Ronne': slice( 1.04e6, 1.34e5),
-       }
-grll = {'Totten': [(2.1937e6,-1.2807e6),
-                   (2.2077e6,-1.2057e6), 
-                   (2.2234e6,-1.2121e6), 
-                   (2.2277e6,-1.2121e6), 
-                   (2.2334e6,-1.1725e6), 
-                   (2.2429e6,-1.1593e6), 
-                   (2.2502e6,-1.1075e6), 
-                   (2.2627e6,-1.1068e6), 
-                   (2.2728e6,-1.0617e6),
-                   (2.2974e6,-1.1226e6),
-                   (2.3199e6,-1.0849e6),],
-       }
-isfl = {'Totten': [(2.3030e6,-1.1333e6),
-                   (2.3179e6,-1.1074e6),],
-       }
-ldir = {'Totten': ('below', 'above')}
 
 class ModelGeometry(object):
     """ create geometry files for PICO and PICOP """
@@ -73,11 +45,11 @@ class ModelGeometry(object):
         self.name = name
         if n is None:
             self.n = 3
-        self.fn_PICO = f'../results/PICO/{name}.nc'
-        self.fn_PICOP = f'../results/PICO/{name}.nc'
-        self.fn_isf = f'../data/mask_polygons/{name}_isf.geojson'
-        self.fn_grl = f'../data/mask_polygons/{name}_grl.geojson'
-        self.fn_outline = f'../data/mask_polygons/{name}_polygon.geojson'
+        self.fn_PICO = f'{results}/PICO/{name}.nc'
+        self.fn_PICOP = f'{results}/PICO/{name}.nc'
+        self.fn_isf = f'{data}/mask_polygons/{name}_isf.geojson'
+        self.fn_grl = f'{data}/mask_polygons/{name}_grl.geojson'
+        self.fn_outline = f'{data}/mask_polygons/{name}_polygon.geojson'
         for fn in [self.fn_outline, self.fn_grl, self.fn_isf]:
             assert os.path.exists(fn), f'file does not exists:  {fn}'
         return
@@ -256,7 +228,7 @@ class ModelGeometry(object):
         A[0] = (self.ds.mask*self.ds.area).sum(['x','y'])
         for k in np.arange(1,self.n+1):
             A[k] = self.ds.area.where(self.ds.box==k).sum(['x','y'])  
-        assert A[0]==np.sum(A[1:])
+        # assert A[0]==np.sum(A[1:]), f'{A[0]=} should be{np.sum(A[1:])=}'
         self.ds['area_k'] = xr.DataArray(data=A, dims='boxnr', coords={'boxnr':np.arange(self.n+1)})
         return
 
@@ -309,7 +281,10 @@ class ModelGeometry(object):
 
     def plot_PICO(self):
         """ plots all PICOP fields """
+        print(self.fn_PICO)
         if os.path.exists(self.fn_PICO):
+            print(self.fn_PICO, ' exists')
+            
             ds = xr.open_dataset(self.fn_PICO)
         else:
             ds = self.PICO()
@@ -397,5 +372,10 @@ class ModelGeometry(object):
 
 if __name__=='__main__':
     """ calculate the Totten IS example """
-    for glacier in glaciers:
-        ModelGeometry(name=glacier).PICO()
+    # for glacier in glaciers:
+    #     ModelGeometry(name=glacier).PICO()
+    # ModelGeometry(name='Totten').PICO()
+    ModelGeometry(name='MoscowUniversity').PICO()
+    ModelGeometry(name='Dotson').PICO()
+    ModelGeometry(name='Thwaites').PICO()
+    ModelGeometry(name='PineIsland').PICO()
