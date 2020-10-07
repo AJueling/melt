@@ -11,6 +11,7 @@ import geopandas
 import matplotlib
 import matplotlib.pyplot as plt
 
+from advect import advect_grl
 from shapely.geometry import mapping
 
 if sys.platform=='darwin':  # my macbook
@@ -32,7 +33,7 @@ glaciers = ['Lambert',
             'PineIsland',
             'FilchnerRonne',
            ]
-
+coarse_resolution = ['Ross', 'FilchnerRonne']
 class ModelGeometry(object):
     """ create geometry files for PICO and PICOP """
     def __init__(self, name, n=None):
@@ -46,7 +47,7 @@ class ModelGeometry(object):
         if n is None:
             self.n = 3
         self.fn_PICO = f'{results}/PICO/{name}.nc'
-        self.fn_PICOP = f'{results}/PICO/{name}.nc'
+        self.fn_PICOP = f'{results}/PICOP/{name}.nc'
         self.fn_isf = f'{data}/mask_polygons/{name}_isf.geojson'
         self.fn_grl = f'{data}/mask_polygons/{name}_grl.geojson'
         self.fn_outline = f'{data}/mask_polygons/{name}_polygon.geojson'
@@ -58,6 +59,7 @@ class ModelGeometry(object):
     def select_geometry(self):
         """ selects the appropriate domain of BedMachine dataset 
         the polygon stored in the .geojson was created in QGIS
+        large ice shelves: grid sopacing is decreased to 2.5 km
         """
         ds = xr.open_dataset(fn_BedMachine)
         ds = ds.rio.set_spatial_dims(x_dim='x', y_dim='y')
@@ -65,6 +67,9 @@ class ModelGeometry(object):
         poly = geopandas.read_file(self.fn_outline, crs='espg:3031')
         self.clipped = ds.mask.rio.clip(poly.geometry.apply(mapping), poly.crs, drop=True)
         self.ds = ds.where(self.clipped)
+        #
+        if self.name in coarse_resolution:
+            self.ds = self.ds.coarsen(x=5,y=5)
         return
 
     def calc_draft(self):
@@ -290,7 +295,7 @@ class ModelGeometry(object):
         ds.draft.name = 'draft [meters]'
         ds.draft.plot(ax=ax[0], cmap='plasma', **kwargs, vmax=0)
         ds.grl.where(ds.grl>0).plot(ax=ax[0], cmap='Blues', add_colorbar=False)
-        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds'   , add_colorbar=False)
+        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds' , add_colorbar=False)
         ds.disf.name = 'to ice shelf front [km]'
         (ds.disf/1e3).plot(ax=ax[1], **kwargs)
         ds.dgrl.name = 'to grounding line [km]'
@@ -338,17 +343,33 @@ class ModelGeometry(object):
         the inner product contains the angle `\alpha` between them
         `n_1 \cdot n_2 = |n_1| |n_2| \cos \alpha`
         at the same time, `\alpha` is angle between the plane and the horizontal
-        `alpha = \arccos ( \frac{n_1 \cdot n_2}{|n_1|*|n_2|} )` 
+        `alpha = \arccos ( \frac{n_1 \cdot n_2}{|n_1|*|n_2|} )`
         """
-        da = self.ds.draft
+        if self.name in coarse_resolution:
+            ds = self.ds.draft
+        else:  # smoothing `draft` with a rolling mean first
+            da = (self.ds.draft.rolling(x=5).mean()+self.ds.draft.rolling(y=5).mean())/2
         dx, dy = da.x[1]-da.x[0], da.y[1]-da.y[0]
-        dxdy = (da.x-da.x.shift(x=1))*(da.y-da.y.shift(y=1))
+        dxdy = abs((da.y-da.y.shift(y=1))*(da.x-da.x.shift(x=1)))
         ip1 = da.shift(x=-1)
         im1 = da.shift(x= 1)
         jp1 = da.shift(y=-1)
         jm1 = da.shift(y= 1)
         n1_norm = np.linalg.norm(np.array([-2*dy*(ip1-im1), -2*dx*(jp1-jm1), 4*dxdy]), axis=0)
         self.ds['alpha'] = np.rad2deg(np.arccos(4*dxdy/n1_norm))
+        return
+
+    def adv_grl(self):
+        """ solves advection-diffusion equation as described in Pelle et al. (2019)
+        uses `advect_grl` frunction from `advect.py`
+        
+        """
+        ds = self.ds
+        ds['u'] = ds.u.fillna(0)
+        ds['v'] = ds.v.fillna(0)
+        kw_isel = dict(time=-1, x=slice(1,-1), y=slice(1,-1))  # remove padding
+        grl_adv = advect_grl(ds=ds, eps=1/25, T=500).isel(**kw_isel).drop('time')
+        self.ds['grl_adv'] = grl_adv
         return
 
     def PICOP(self):
@@ -363,18 +384,41 @@ class ModelGeometry(object):
             self.PICO()  # create or load all fields for PICO
             self.interpolate_velocity()
             self.calc_alpha()
+            self.adv_grl()
             self.ds.to_netcdf(self.fn_PICOP)
         return self.ds
 
     def plot_PICOP(self):
         """ plots important PICO fields + interpolated velocity """
-        # xx, yy = np.meshgrid(vel.x, vel.y)
-        # plt.figure(figsize=(10,5), constrained_layout=True)
+        if os.path.exists(self.fn_PICOP):
+            ds = xr.open_dataset(self.fn_PICOP)
+        else:
+            ds = self.PICOP()
+        
+        f, ax = plt.subplots(1, 3, figsize=(12,5), constrained_layout=True, sharey=True)
+        kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
+
+        # draft 
+        ds.draft.name = 'draft [meters]'
+        ds.draft.plot(ax=ax[0], cmap='plasma', **kwargs, vmax=0)
+        ds.grl.where(ds.grl>0).plot(ax=ax[0], cmap='Blues', add_colorbar=False)
+        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds' , add_colorbar=False)
 
         # velocity stream
-        # np.sqrt(vel.VX**2+vel.VY**2).plot(cbar_kwargs={'label':'velocity  [m/yr]'})
-        # plt.streamplot(xx, yy, vel.VX, vel.VY, color='w', linewidth=np.sqrt(vel.VX**2+vel.VY**2).fillna(0).values/5e2)
-        pass
+        vel = np.sqrt(ds.u**2+ds.v**2)
+        vel.name = 'velocity [m/yr]'
+        xx, yy = np.meshgrid(ds.x, ds.y)
+        vel.plot(ax=ax[1], **kwargs)
+        ax[1].streamplot(xx, yy, ds.u, ds.v, color='w', linewidth=vel.fillna(0).values/5e2)
+
+        # alpha
+        ds.alpha.name = 'local angle [$^\circ$]'
+        ds.alpha.plot(ax=ax[2], **kwargs)
+
+        # advected grounding line
+
+        f.suptitle(f'{self.name} Ice Shelf', fontsize=16)
+        return ds
 
 
 if __name__=='__main__':
