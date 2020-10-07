@@ -1,4 +1,5 @@
 import os
+import sys
 import dask
 import numpy as np
 import xesmf as xe
@@ -21,7 +22,6 @@ elif sys.platform=='linux':  # cartesius
 
 fn_BedMachine = f'{data}/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
 fn_IceVelocity = f'{data}/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
-fn_IceVelocity_remapped = f'{data}/IceVelocity/IceVelocity_remapped_v01.nc'
 
 glaciers = ['Lambert',
             'Totten',
@@ -281,14 +281,10 @@ class ModelGeometry(object):
 
     def plot_PICO(self):
         """ plots all PICOP fields """
-        print(self.fn_PICO)
         if os.path.exists(self.fn_PICO):
-            print(self.fn_PICO, ' exists')
-            
             ds = xr.open_dataset(self.fn_PICO)
         else:
             ds = self.PICO()
-        divnorm = matplotlib.colors.DivergingNorm(vmin=-3000., vcenter=0, vmax=500)
         kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
         f, ax = plt.subplots(1, 5, figsize=(15,5), constrained_layout=True, sharey=True, sharex=True)
         ds.draft.name = 'draft [meters]'
@@ -307,40 +303,52 @@ class ModelGeometry(object):
         return
 
     ### PICOP methods
-    def select_velocity(self):
-        """ selects the appropriate domain """
-        self.vel = xr.open_dataset(fn_IceVelocity).where(self.ds)
-        return
-
     def interpolate_velocity(self):
         """ interpolates 450 m spaced velocity onto geometry (500 m spaced) grid 
         add new velocity fields (`u` and `v`) to dataset `self.ds`
         interpolation
         """
-        if os.path.exists(fn_IceVelocity_remapped):
-            vel = xr.open_dataset(fn_IceVelocity_remapped)
-        else:  
-            ds  = xr.open_dataset(fn_BedMachine)
-            vel = xr.open_dataset(fn_IceVelocity)
+        xlim = slice(self.ds.x[0],self.ds.x[-1])
+        ylim = slice(self.ds.y[0],self.ds.y[-1])
+        vel = xr.open_dataset(fn_IceVelocity)
+        vel = vel.sel({'x':xlim, 'y':ylim)
 
-            # create new lat/lon coords for dataset `ds`
-            project = pyproj.Proj("epsg:3031")
-            xx, yy = np.meshgrid(ds.x, ds.y)
-            lons, lats = project(xx, yy, inverse=True)
-            dims = ['y','x']
-            ds = ds.assign_coords({'lat':(dims,lats), 'lon':(dims,lons)})
+        # create new lat/lon coords for dataset `ds` to enable regridding
+        project = pyproj.Proj("epsg:3031")
+        xx, yy = np.meshgrid(self.ds.x, self.ds.y)
+        lons, lats = project(xx, yy, inverse=True)
+        dims = ['y','x']
+        self.ds = self.ds.assign_coords({'lat':(dims,lats), 'lon':(dims,lons)})
 
-            regridder = xe.Regridder(self.vel, self.ds, 'bilinear')
-            u = regridder(self.vel.VX)
-            v = regridder(self.vel.VY)
-            u.name = 'u'
-            v.name = 'v'
-        self.ds = xr.merge([self.ds, vel.u, vel.v])
+        regridder = xe.Regridder(vel, self.ds, 'bilinear')
+        u = regridder(vel.VX)
+        v = regridder(vel.VY)
+        u.name = 'u'
+        v.name = 'v'
+        self.ds = xr.merge([self.ds, u, v])
         return
 
     def calc_alpha(self):
-        """ local slope angle alpha (x,y) based on draft """
-        self.ds['alpha'] = 0
+        """ local slope angle alpha (x,y) based on draft 
+        using the four points one grid point away in the x and y directions
+        calculate the normal vector to the two x ad y-slopes `n1 = xslope x yslope`
+        `n_1 = [-2*dy*(a_{i+1}-a_{i-1}), -2*dx*(a_{j+1}-a_{j-1}), 4*dx*dy]`
+        where `a` is the draft, `dx` and `dy` are the grid spacings
+        we then define the vertical unit vector `n_2 = [0,0,1]`
+        the inner product contains the angle `\alpha` between them
+        `n_1 \cdot n_2 = |n_1| |n_2| \cos \alpha`
+        at the same time, `\alpha` is angle between the plane and the horizontal
+        `alpha = \arccos ( \frac{n_1 \cdot n_2}{|n_1|*|n_2|} )` 
+        """
+        da = self.ds.draft
+        dx, dy = da.x[1]-da.x[0], da.y[1]-da.y[0]
+        dxdy = (da.x-da.x.shift(x=1))*(da.y-da.y.shift(y=1))
+        ip1 = da.shift(x=-1)
+        im1 = da.shift(x= 1)
+        jp1 = da.shift(y=-1)
+        jm1 = da.shift(y= 1)
+        n1_norm = np.linalg.norm(np.array([-2*dy*(ip1-im1), -2*dx*(jp1-jm1), 4*dxdy]), axis=0)
+        self.ds['alpha'] = np.rad2deg(np.arccos(4*dxdy/n1_norm))
         return
 
     def PICOP(self):
@@ -352,9 +360,8 @@ class ModelGeometry(object):
         if os.path.exists(self.fn_PICOP):
             self.ds = xr.open_dataset(self.fn_PICOP)
         else:
-            self.PICO()  # create all fields for PICO
+            self.PICO()  # create or load all fields for PICO
             self.interpolate_velocity()
-            self.select_velocity()
             self.calc_alpha()
             self.ds.to_netcdf(self.fn_PICOP)
         return self.ds
@@ -375,7 +382,7 @@ if __name__=='__main__':
     # for glacier in glaciers:
     #     ModelGeometry(name=glacier).PICO()
     # ModelGeometry(name='Totten').PICO()
-    ModelGeometry(name='MoscowUniversity').PICO()
-    ModelGeometry(name='Dotson').PICO()
-    ModelGeometry(name='Thwaites').PICO()
-    ModelGeometry(name='PineIsland').PICO()
+    ModelGeometry(name='MoscowUniversity').PICOP()
+    ModelGeometry(name='Dotson').PICOP()
+    ModelGeometry(name='Thwaites').PICOP()
+    ModelGeometry(name='PineIsland').PICOP()
