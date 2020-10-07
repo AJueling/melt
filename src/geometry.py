@@ -311,7 +311,7 @@ class ModelGeometry(object):
         xlim = slice(self.ds.x[0],self.ds.x[-1])
         ylim = slice(self.ds.y[0],self.ds.y[-1])
         vel = xr.open_dataset(fn_IceVelocity)
-        vel = vel.sel({'x':xlim, 'y':ylim)
+        vel = vel.sel({'x':xlim, 'y':ylim})
 
         # create new lat/lon coords for dataset `ds` to enable regridding
         project = pyproj.Proj("epsg:3031")
@@ -378,10 +378,11 @@ class ModelGeometry(object):
 
 
 if __name__=='__main__':
-    """ calculate the Totten IS example """
+    """ calculate geometries """
     # for glacier in glaciers:
     #     ModelGeometry(name=glacier).PICO()
-    # ModelGeometry(name='Totten').PICO()
+    ModelGeometry(name='Lambert').PICOP()
+    ModelGeometry(name='Totten').PICOP()
     ModelGeometry(name='MoscowUniversity').PICOP()
     ModelGeometry(name='Dotson').PICOP()
     ModelGeometry(name='Thwaites').PICOP()
