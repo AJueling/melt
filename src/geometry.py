@@ -1,6 +1,5 @@
 import os
 import sys
-import dask
 import numpy as np
 import xesmf as xe
 import pyproj
@@ -34,6 +33,8 @@ glaciers = ['Lambert',
             'FilchnerRonne',
            ]
 coarse_resolution = ['Ross', 'FilchnerRonne']
+
+
 class ModelGeometry(object):
     """ create geometry files for PICO and PICOP """
     def __init__(self, name, n=None):
@@ -69,7 +70,7 @@ class ModelGeometry(object):
         self.ds = ds.where(self.clipped)
         #
         if self.name in coarse_resolution:
-            self.ds = self.ds.coarsen(x=5,y=5)
+            self.ds = self.ds.coarsen(x=5,y=5).mean()
         return
 
     def calc_draft(self):
@@ -94,7 +95,7 @@ class ModelGeometry(object):
                   xr.where(mask-mask.shift(x=-1)==diff, mask, 0) + \
                   xr.where(mask-mask.shift(y= 1)==diff, mask, 0) + \
                   xr.where(mask-mask.shift(y=-1)==diff, mask, 0)
-            new = new/new
+            new = new.where(mask==3)/new
             new.name = line
             new = new.rio.set_spatial_dims(x_dim='x', y_dim='y')
             new = new.rio.write_crs('epsg:3031')
@@ -104,9 +105,6 @@ class ModelGeometry(object):
 
         grl  = find_grl_isf('grl')
         isf  = find_grl_isf('isf')
-        # print(self.ds)
-        # print(grl)
-        # print(isf)
         # now new `mask`: ice shelf = 1, rest = 0
         mask = xr.where(self.ds['mask']==3, 1, 0)
         self.ds = self.ds.drop('mask')
@@ -237,7 +235,7 @@ class ModelGeometry(object):
         self.ds['area_k'] = xr.DataArray(data=A, dims='boxnr', coords={'boxnr':np.arange(self.n+1)})
         return
 
-    def PICO(self):
+    def PICO(self, new=False):
         """ creates geometry Dataset for PICO model containing
         coordinates:
         x, y    .. from BedMachine dataset [m]
@@ -255,7 +253,7 @@ class ModelGeometry(object):
             . box    .. (int)    box number [1,...,n]
             . area   .. (float)  area of each box [m^2]
         """
-        if os.path.exists(self.fn_PICO):
+        if os.path.exists(self.fn_PICO) and new==False:
             self.ds = xr.open_dataset(self.fn_PICO)
         else:
             print(f'\n --- {self.name} ---\n')
@@ -325,7 +323,7 @@ class ModelGeometry(object):
         dims = ['y','x']
         self.ds = self.ds.assign_coords({'lat':(dims,lats), 'lon':(dims,lons)})
 
-        regridder = xe.Regridder(vel, self.ds, 'bilinear')
+        regridder = xe.Regridder(vel, self.ds, 'bilinear', reuse_weights=True)
         u = regridder(vel.VX)
         v = regridder(vel.VY)
         u.name = 'u'
@@ -372,13 +370,14 @@ class ModelGeometry(object):
         self.ds['grl_adv'] = grl_adv
         return
 
-    def PICOP(self):
+    def PICOP(self, new=False):
         """ creates geometry Dataset for PICOP model containing
         all PICO DataArrays
         u  .. x-velocity
         v  .. y-velocity
         """
-        if os.path.exists(self.fn_PICOP):
+        if os.path.exists(self.fn_PICOP) and new==False:
+            print(f'\n --- {self.name} ---\n')
             self.ds = xr.open_dataset(self.fn_PICOP)
         else:
             self.PICO()  # create or load all fields for PICO
@@ -395,7 +394,7 @@ class ModelGeometry(object):
         else:
             ds = self.PICOP()
         
-        f, ax = plt.subplots(1, 3, figsize=(12,5), constrained_layout=True, sharey=True)
+        f, ax = plt.subplots(1, 4, figsize=(12,5), constrained_layout=True, sharey=True)
         kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
 
         # draft 
@@ -416,18 +415,26 @@ class ModelGeometry(object):
         ds.alpha.plot(ax=ax[2], **kwargs)
 
         # advected grounding line
+        ds.grl_adv.name = 'advected grl depth'
+        ds.grl_adv.plot(ax=ax[3], **kwargs)
 
         f.suptitle(f'{self.name} Ice Shelf', fontsize=16)
         return ds
 
 
 if __name__=='__main__':
-    """ calculate geometries """
-    # for glacier in glaciers:
-    #     ModelGeometry(name=glacier).PICO()
-    ModelGeometry(name='Lambert').PICOP()
-    ModelGeometry(name='Totten').PICOP()
-    ModelGeometry(name='MoscowUniversity').PICOP()
-    ModelGeometry(name='Dotson').PICOP()
-    ModelGeometry(name='Thwaites').PICOP()
-    ModelGeometry(name='PineIsland').PICOP()
+    """ calculate geometries for individual or all glaciers
+    called as `python geometry.py {glacier_name} new`
+    """
+    new = False  # skip calc if files exist; this is the default
+    if len(sys.argv)>2:
+        if sys.argv[2]=='new':
+            new = True   # overwrite existing files
+
+    if len(sys.argv)>1:  # if glacier is named, only calculate geometry for this one
+        glacier = sys.argv[1]
+        assert glacier in glaciers, f'input {glacier} not recognized, must be in {glaciers}'
+        ModelGeometry(name=glacier).PICOP(new=new)
+    else:  # calculate geometry for all glaciers
+        for glacier in glaciers:
+            ModelGeometry(name=glacier).PICOP(new=new)
