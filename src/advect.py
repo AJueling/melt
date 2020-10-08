@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
-from tqdm.notebook import tqdm
+from tqdm.autonotebook import tqdm
 
 
 zgl = r'$z_{gl}(x,y)'
@@ -13,14 +13,13 @@ def advect_grl(ds, eps, T):
     
     input:
     ds  .. [xr.DataSet]     containing
-                            x/y   .. grid coordinates  [m]
+                            x/y   .. grid coordinates of size nx/ny [m]
                             grl   .. binary mask identifying grounding line 
                             draft .. includes grl depth at grl mask [m]
                             u/v   .. x/y velocities  [m/yr]
     T   .. [int]            number of years to run
     eps .. [float]          diffusion constant epsilon scaled with dx**2,
                             decent values around 1/25
-    
     
     output:
     evo .. [xr.DataArray]  (ny,nx,nt) evolution of grounding line depths $z_{gl}$ in [m]
