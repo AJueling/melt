@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 from advect import advect_grl
 from shapely.geometry import mapping
+from tqdm.autonotebook import tqdm
 
 if sys.platform=='darwin':  # my macbook
     data = '/Users/Andre/git/melt/data'
