@@ -5,6 +5,7 @@ import xesmf as xe
 import pyproj
 import xarray as xr
 import pandas as pd
+import warnings
 import rioxarray
 import geopandas
 import matplotlib
@@ -13,6 +14,9 @@ import matplotlib.pyplot as plt
 from advect import advect_grl
 from shapely.geometry import mapping
 from tqdm.autonotebook import tqdm
+
+# to suppress xarray's "Mean of empty slice" warning
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 if sys.platform=='darwin':  # my macbook
     data = '/Users/Andre/git/melt/data'
@@ -34,7 +38,10 @@ glaciers = ['Lambert',
             'FilchnerRonne',
            ]
 coarse_resolution = ['Ross', 'FilchnerRonne']
-
+T_adv = {'Totten'          : 400,
+         'MoscowUniversity': 400,
+         'Thwaites'        : 200, 
+        }
 
 class ModelGeometry(object):
     """ create geometry files for PICO and PICOP """
@@ -50,6 +57,7 @@ class ModelGeometry(object):
             self.n = 3
         self.fn_PICO = f'{results}/PICO/{name}.nc'
         self.fn_PICOP = f'{results}/PICOP/{name}.nc'
+        self.fn_evo = f'{results}/advection/{name}_evo.nc'
         self.fn_isf = f'{data}/mask_polygons/{name}_isf.geojson'
         self.fn_grl = f'{data}/mask_polygons/{name}_grl.geojson'
         self.fn_outline = f'{data}/mask_polygons/{name}_polygon.geojson'
@@ -108,7 +116,8 @@ class ModelGeometry(object):
         isf  = find_grl_isf('isf')
         # now new `mask`: ice shelf = 1, rest = 0
         mask = xr.where(self.ds['mask']==3, 1, 0)
-        self.ds = self.ds.drop('mask')
+        self.ds = self.ds.rename({'mask':'mask_orig'})
+        # self.ds = self.ds.drop('mask')
         self.ds = xr.merge([self.ds, mask, grl, isf])
         return
 
@@ -255,6 +264,7 @@ class ModelGeometry(object):
             . area   .. (float)  area of each box [m^2]
         """
         if os.path.exists(self.fn_PICO) and new==False:
+            print('load PICO nc file')
             self.ds = xr.open_dataset(self.fn_PICO)
         else:
             print(f'\n --- {self.name} ---\n')
@@ -324,7 +334,7 @@ class ModelGeometry(object):
         dims = ['y','x']
         self.ds = self.ds.assign_coords({'lat':(dims,lats), 'lon':(dims,lons)})
 
-        regridder = xe.Regridder(vel, self.ds, 'bilinear', reuse_weights=True)
+        regridder = xe.Regridder(vel, self.ds, 'bilinear')#, reuse_weights=True)
         u = regridder(vel.VX)
         v = regridder(vel.VY)
         u.name = 'u'
@@ -366,9 +376,12 @@ class ModelGeometry(object):
         ds = self.ds
         ds['u'] = ds.u.fillna(0)
         ds['v'] = ds.v.fillna(0)
-        kw_isel = dict(time=-1, x=slice(1,-1), y=slice(1,-1))  # remove padding
-        grl_adv = advect_grl(ds=ds, eps=1/25, T=500).isel(**kw_isel).drop('time')
-        self.ds['grl_adv'] = grl_adv
+        if self.name in T_adv:  T = T_adv[self.name]
+        else:                   T = 500
+        kw_isel = dict(x=slice(1,-1), y=slice(1,-1))  # remove padding
+        evo = advect_grl(ds=ds, eps=1/25, T=T).isel(**kw_isel)
+        evo.to_netcdf(self.fn_evo)
+        self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
         return
 
     def PICOP(self, new=False):
@@ -420,7 +433,10 @@ class ModelGeometry(object):
         ds.grl_adv.plot(ax=ax[3], **kwargs)
 
         f.suptitle(f'{self.name} Ice Shelf', fontsize=16)
-        return ds
+        return
+
+    def plot_all(self):
+        return
 
 
 if __name__=='__main__':
@@ -428,14 +444,17 @@ if __name__=='__main__':
     called as `python geometry.py {glacier_name} new`
     """
     new = False  # skip calc if files exist; this is the default
-    if len(sys.argv)>2:
-        if sys.argv[2]=='new':
+    if len(sys.argv)>1:
+        if sys.argv[1]=='new':
             new = True   # overwrite existing files
 
-    if len(sys.argv)>1:  # if glacier is named, only calculate geometry for this one
-        glacier = sys.argv[1]
+    if len(sys.argv)>2:  # if glacier is named, only calculate geometry for this one
+        glacier = sys.argv[2]
         assert glacier in glaciers, f'input {glacier} not recognized, must be in {glaciers}'
+        ModelGeometry(name=glacier).PICO(new=new)
         ModelGeometry(name=glacier).PICOP(new=new)
     else:  # calculate geometry for all glaciers
-        for glacier in glaciers:
+        for i, glacier in enumerate(glaciers):
+            if i in [0,3,7]:  continue
+            ModelGeometry(name=glacier).PICO(new=new)
             ModelGeometry(name=glacier).PICOP(new=new)

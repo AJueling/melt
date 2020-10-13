@@ -11,7 +11,8 @@ destination = '../notebooks/'
 assert os.path.exists(destination)
 
 # copying stripped .ipynb files
-files = ['Bedmachine',
+files = ['Advection',
+         'Bedmachine',
          'Plume',
          'PICO',
         ]
