@@ -19,14 +19,14 @@ from tqdm.autonotebook import tqdm
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 if sys.platform=='darwin':  # my macbook
-    data = '/Users/Andre/git/melt/data'
-    results = '/Users/Andre/git/melt/results'
+    path_data = '/Users/Andre/git/melt/data'
+    path_results = '/Users/Andre/git/melt/results'
 elif sys.platform=='linux':  # cartesius
-    data = '/home/ajueling/melt/data'
-    results = '/home/ajueling/melt/results'
+    path_data = '/home/ajueling/melt/data'
+    path_results = '/home/ajueling/melt/results'
 
-fn_BedMachine = f'{data}/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
-fn_IceVelocity = f'{data}/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
+fn_BedMachine = f'{path_data}/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
+fn_IceVelocity = f'{path_data}/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
 
 glaciers = ['Lambert',
             'Totten',
@@ -44,7 +44,7 @@ T_adv = {'Totten'          : 400,
         }
 
 class ModelGeometry(object):
-    """ create geometry files for PICO and PICOP """
+    """ create geometry files for PICO and PICOP models """
     def __init__(self, name, n=None):
         """
         input:
@@ -53,14 +53,14 @@ class ModelGeometry(object):
         """
         assert name in glaciers
         self.name = name
-        if n is None:
-            self.n = 3
-        self.fn_PICO = f'{results}/PICO/{name}.nc'
-        self.fn_PICOP = f'{results}/PICOP/{name}.nc'
-        self.fn_evo = f'{results}/advection/{name}_evo.nc'
-        self.fn_isf = f'{data}/mask_polygons/{name}_isf.geojson'
-        self.fn_grl = f'{data}/mask_polygons/{name}_grl.geojson'
-        self.fn_outline = f'{data}/mask_polygons/{name}_polygon.geojson'
+        if n is None:  self.n = 3
+        else:          self.n = n
+        self.fn_PICO = f'{path_results}/PICO/{name}_n{self.n}_geometry.nc'
+        self.fn_PICOP = f'{path_results}/PICOP/{name}_n{self.n}_geometry.nc'
+        self.fn_evo = f'{path_results}/advection/{name}_evo.nc'
+        self.fn_isf = f'{path_data}/mask_polygons/{name}_isf.geojson'
+        self.fn_grl = f'{path_data}/mask_polygons/{name}_grl.geojson'
+        self.fn_outline = f'{path_data}/mask_polygons/{name}_polygon.geojson'
         for fn in [self.fn_outline, self.fn_grl, self.fn_isf]:
             assert os.path.exists(fn), f'file does not exists:  {fn}'
         return
@@ -234,8 +234,8 @@ class ModelGeometry(object):
         introduce boxnr coordinate
         assumes regularly space coordinates named x and y
         """
-        dx = self.ds.x[1]-self.ds.x[0]
-        dy = self.ds.y[1]-self.ds.y[0]
+        dx = abs(self.ds.x[1]-self.ds.x[0])
+        dy = abs(self.ds.y[1]-self.ds.y[0])
         self.ds['area'] = dx*dy*self.ds.mask
         A = np.zeros((self.n+1))
         A[0] = (self.ds.mask*self.ds.area).sum(['x','y'])
@@ -441,7 +441,7 @@ class ModelGeometry(object):
 
 if __name__=='__main__':
     """ calculate geometries for individual or all glaciers
-    called as `python geometry.py {glacier_name} new`
+    called as `python geometry.py new {glacier_name}`
     """
     new = False  # skip calc if files exist; this is the default
     if len(sys.argv)>1:

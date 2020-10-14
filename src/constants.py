@@ -22,9 +22,9 @@ class ModelConstants(object):
         self.rho0   =  1033     # [kg/m^3]
         self.rhoi   =   910     # [kg/m^3]
         self.rhow   =  1028     # [kg/m^3]
-        self.gammaS =  2e-6     # [m/s]
-        self.gammaT =  5e-5     # [m/s]
-        self.gammae =  2e-5     # [m/s]
+        self.gammaS =  2e-6     # [m/s]       salinity mixing coefficient
+        self.gammaT =  5e-5     # [m/s]       temperature mixing coefficient $$
+        self.gammae =  2e-5     # [m/s]       effective mixing coefficient $\gamma^\star_T$
         self.C      =  1e6      # [m^6/s/kg]
         
         # Plume model (from Table 1)
