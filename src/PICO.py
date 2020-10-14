@@ -8,12 +8,12 @@ from constants import ModelConstants
 
 # ice shelves not listes in PICO publication
 # n from Fig. 3, Ta/Sa from Fig. 2;                             # drainage basin
-noPICO = {'Lambert'         : {'n':3, 'Ta':-1.73, 'Sa':34.70},  #  6
+noPICO = {'Amery'           : {'n':3, 'Ta':-1.73, 'Sa':34.70},  #  6
           'MoscowUniversity': {'n':2, 'Ta':-0.73, 'Sa':34.73},  #  8
           'Dotson'          : {'n':2, 'Ta':+0.47, 'Sa':34.73},  # 14
          }
 # Table 2 of Reese et al. (2018)
-df = pd.read_csv('../../doc/Reese2018/Table2.csv', index_col=0)
+table2 = pd.read_csv('../../doc/Reese2018/Table2.csv', index_col=0)
 
 class PicoModel(ModelConstants, ModelGeometry):
     """ 2D melt model by Reese et al. (2018), doi: 10.5194/tc-12-1969-2018
@@ -103,7 +103,7 @@ class PicoModel(ModelConstants, ModelGeometry):
             Q = noPICO[self.name][nPn]
         else:
             
-            Q = df[dfn].loc[self.name]
+            Q = table2[dfn].loc[self.name]
         if q=='n':  Q = int(Q)
         else:       Q = float(Q)
         return Q
@@ -118,7 +118,6 @@ class PicoModel(ModelConstants, ModelGeometry):
         s = self.S[0]/self.nulambda
         Crbsa = self.C*self.rho0*(self.beta*s-self.alpha)
         x = -self.g1[1]/(2*Crbsa) + np.sqrt((self.g1[1]/2/Crbsa)**2-(self.g1[1]*self.T_s(1))/(Crbsa))
-        print(f'{x=}')
         # assert x>0  # argued at the end of appendix A1
         self.T[1] = self.T[0] - x
         y = x*self.S[0]/(self.nulambda)
@@ -156,7 +155,6 @@ class PicoModel(ModelConstants, ModelGeometry):
         mk *= 3600*24*365  # [m/s] -> [m/yr]
         self.m[k] = mk.mean()
         self.M += mk.fillna(0)
-        print(self.m)
         return
         
     def compute_pico(self):
@@ -170,15 +168,12 @@ class PicoModel(ModelConstants, ModelGeometry):
         S = xr.DataArray(data=self.S, name='Sk', **kwargs)
         m = xr.DataArray(data=self.m, name='mk', **kwargs)
         q = xr.DataArray(data=self.q, name='q')
-        print(self.m)
-        
         ds = xr.merge([self.p, self.M, T, S, m, q])
-        # ds.to_netcdf(self.fn_PICO_output)
+        ds.to_netcdf(self.fn_PICO_output)
         return self.ds, ds  # geometry dataset and PICO output dataset
 
-    def compare_Reese(self):
-        """ compares melt rates to the ones in original publication and obs. """
-        
+
+
 
 
 if __name__=='__main__':

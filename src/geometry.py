@@ -28,7 +28,7 @@ elif sys.platform=='linux':  # cartesius
 fn_BedMachine = f'{path_data}/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
 fn_IceVelocity = f'{path_data}/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
 
-glaciers = ['Lambert',
+glaciers = ['Amery',
             'Totten',
             'MoscowUniversity',
             'Ross',
