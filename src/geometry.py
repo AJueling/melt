@@ -245,7 +245,7 @@ class ModelGeometry(object):
         self.ds['area_k'] = xr.DataArray(data=A, dims='boxnr', coords={'boxnr':np.arange(self.n+1)})
         return
 
-    def PICO(self, new=False):
+    def PICO_geometry(self, new=False):
         """ creates geometry Dataset for PICO model containing
         coordinates:
         x, y    .. from BedMachine dataset [m]
@@ -290,7 +290,7 @@ class ModelGeometry(object):
             self.calc_area()
 
             # print('self.ds.to_netcdf(self.fn_PICO)')
-            self.ds.to_netcdf(self.fn_PICO)
+            self.ds.drop(['mapping', 'spatial_ref']).to_netcdf(self.fn_PICO)
         return self.ds
 
     def plot_PICO(self):
@@ -342,32 +342,6 @@ class ModelGeometry(object):
         self.ds = xr.merge([self.ds, u, v])
         return
 
-    def calc_alpha(self):
-        """ local slope angle alpha (x,y) based on draft 
-        using the four points one grid point away in the x and y directions
-        calculate the normal vector to the two x ad y-slopes `n1 = xslope x yslope`
-        `n_1 = [-2*dy*(a_{i+1}-a_{i-1}), -2*dx*(a_{j+1}-a_{j-1}), 4*dx*dy]`
-        where `a` is the draft, `dx` and `dy` are the grid spacings
-        we then define the vertical unit vector `n_2 = [0,0,1]`
-        the inner product contains the angle `\alpha` between them
-        `n_1 \cdot n_2 = |n_1| |n_2| \cos \alpha`
-        at the same time, `\alpha` is angle between the plane and the horizontal
-        `alpha = \arccos ( \frac{n_1 \cdot n_2}{|n_1|*|n_2|} )`
-        """
-        if self.name in coarse_resolution:
-            ds = self.ds.draft
-        else:  # smoothing `draft` with a rolling mean first
-            da = (self.ds.draft.rolling(x=5).mean()+self.ds.draft.rolling(y=5).mean())/2
-        dx, dy = da.x[1]-da.x[0], da.y[1]-da.y[0]
-        dxdy = abs((da.y-da.y.shift(y=1))*(da.x-da.x.shift(x=1)))
-        ip1 = da.shift(x=-1)
-        im1 = da.shift(x= 1)
-        jp1 = da.shift(y=-1)
-        jm1 = da.shift(y= 1)
-        n1_norm = np.linalg.norm(np.array([-2*dy*(ip1-im1), -2*dx*(jp1-jm1), 4*dxdy]), axis=0)
-        self.ds['alpha'] = np.rad2deg(np.arccos(4*dxdy/n1_norm))
-        return
-
     def adv_grl(self):
         """ solves advection-diffusion equation as described in Pelle et al. (2019)
         uses `advect_grl` frunction from `advect.py`
@@ -379,12 +353,64 @@ class ModelGeometry(object):
         if self.name in T_adv:  T = T_adv[self.name]
         else:                   T = 500
         kw_isel = dict(x=slice(1,-1), y=slice(1,-1))  # remove padding
-        evo = advect_grl(ds=ds, eps=1/25, T=T).isel(**kw_isel)
+        evo = advect_grl(ds=ds, eps=1/50, T=T, plots=False).isel(**kw_isel)
         evo.to_netcdf(self.fn_evo)
         self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
         return
 
-    def PICOP(self, new=False):
+    def calc_angles(self):
+        """ local slope angles (in radians)
+        based on (smoothed) draft field `D` and velocity flowlines `F`
+
+        n1    .. vector perpendicular to scalar draft field
+        n2    .. horizontal flowline vector field `F`
+        n3    .. vertical unit vector = [0,0,1]
+        alpha .. slope angle with respect to flowlines, i.e. b/w n1 and n3
+        beta  .. maximum slope angle, i.e. between n1 and n2,
+                 is also the angle between the plane and the horizontal
+        
+        using the four points one grid point away in the x and y directions
+        calculate the normal vector to the two x ad y-slopes `n1 = xslope x yslope`
+        `n_1 = [-2*dy*(a_{i+1}-a_{i-1}), -2*dx*(a_{j+1}-a_{j-1}), 4*dx*dy]`
+        where `a` is the draft, `dx` and `dy` are the grid spacings
+
+        the flow vectors are perpendicular to the gradient of flowline field A
+        `\nabla F = [dF/dx, dF/dy]` so that `n2 = [-dFdy, dFdx, 0]` 
+        this garantuees orthogonality `\nabla A \cdot n2 = 0`
+
+        the inner product of vectors `a` and `b` contains the angle `gamma`
+        `a \cdot b = |a| |b| \cos \gamma`
+        `\gamma = \arccos ( \frac{a \cdot b}{|a|*|b|} )`
+        """
+        if self.name in coarse_resolution:
+            D = self.ds.draft
+        else:  # smoothing `draft` with a rolling mean first
+            D = (self.ds.draft.rolling(x=5).mean()+self.ds.draft.rolling(y=5).mean())/2
+        dx, dy = D.x[1]-D.x[0], D.y[1]-D.y[0]
+        dxdy = abs((D.y-D.y.shift(y=1))*(D.x-D.x.shift(x=1)))
+        ip = D.shift(x=-1)
+        im = D.shift(x= 1)
+        jp = D.shift(y=-1)
+        jm = D.shift(y= 1)
+        n1 = np.array([-2*dy*(ip-im), -2*dx*(jp-jm), 4*dxdy])
+        n1_norm = np.linalg.norm(n1, axis=0)
+
+        gradF = np.gradient(self.ds['grl_adv'], dx.values)
+        dFdx = xr.DataArray(data=gradF[1], dims=D.dims, coords=D.coords)
+        dFdy = xr.DataArray(data=gradF[0], dims=D.dims, coords=D.coords)
+        n2 = np.array([-dFdy, dFdx, xr.zeros_like(dFdx)])
+        n2_norm = np.linalg.norm(n2, axis=0)
+        del n2
+
+        alpha = np.arccos((-dFdy*n1[0]+dFdx*n1[1])/n1_norm/n2_norm)
+        alpha = abs(alpha-90)
+        beta = np.arccos(4*dxdy/n1_norm) # n3 already normalized
+        self.ds['alpha'] = alpha
+        self.ds['beta']  = beta
+        return
+
+
+    def PICOP_geometry(self, new=False):
         """ creates geometry Dataset for PICOP model containing
         all PICO DataArrays
         u  .. x-velocity
@@ -394,11 +420,11 @@ class ModelGeometry(object):
             print(f'\n --- {self.name} ---\n')
             self.ds = xr.open_dataset(self.fn_PICOP)
         else:
-            self.PICO()  # create or load all fields for PICO
+            self.PICO_geometry()  # create or load all fields for PICO
             self.interpolate_velocity()
-            self.calc_alpha()
             self.adv_grl()
-            self.ds.to_netcdf(self.fn_PICOP)
+            self.calc_angles()
+            self.ds.to_netcdf(self.fn_PICOP) # .drop(['mapping', 'spatial_ref'])
         return self.ds
 
     def plot_PICOP(self):
@@ -406,7 +432,7 @@ class ModelGeometry(object):
         if os.path.exists(self.fn_PICOP):
             ds = xr.open_dataset(self.fn_PICOP)
         else:
-            ds = self.PICOP()
+            ds = self.PICOP_geometry()
         
         f, ax = plt.subplots(1, 4, figsize=(12,5), constrained_layout=True, sharey=True)
         kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
@@ -435,9 +461,6 @@ class ModelGeometry(object):
         f.suptitle(f'{self.name} Ice Shelf', fontsize=16)
         return
 
-    def plot_all(self):
-        return
-
 
 if __name__=='__main__':
     """ calculate geometries for individual or all glaciers
@@ -451,10 +474,10 @@ if __name__=='__main__':
     if len(sys.argv)>2:  # if glacier is named, only calculate geometry for this one
         glacier = sys.argv[2]
         assert glacier in glaciers, f'input {glacier} not recognized, must be in {glaciers}'
-        ModelGeometry(name=glacier).PICO(new=new)
-        ModelGeometry(name=glacier).PICOP(new=new)
+        ModelGeometry(name=glacier).PICO_geometry(new=new)
+        ModelGeometry(name=glacier).PICOP_geometry(new=new)
     else:  # calculate geometry for all glaciers
         for i, glacier in enumerate(glaciers):
             if i in [0,3,7]:  continue
-            ModelGeometry(name=glacier).PICO(new=new)
-            ModelGeometry(name=glacier).PICOP(new=new)
+            ModelGeometry(name=glacier).PICO_geometry(new=new)
+            ModelGeometry(name=glacier).PICOP_geometry(new=new)
