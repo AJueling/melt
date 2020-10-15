@@ -96,10 +96,9 @@ class PlumeModel(ModelConstants):
         # calculations
         self.dp['M'], self.dp['phi0'] = compute_nondimensional(self.dp.dgrl_)
 
-        self.dp['m']  = self.dim_M()
+        self.dp['m']  = self.dim_M()*3600*24*365  # [m/s] -> [m/yr]
         self.dp.m.attrs['long_name'] = 'dimensional meltrates; eqn. (28a)'
-        self.dp.m.attrs['units'] = '[m/s]'
-        
+        self.dp.m.attrs['units'] = '[m/yr]'
         
         self.dp['Phi']   = self.Phi()
         self.dp.Phi.attrs['long_name'] = 'dimensional circulation; eqn. (29)'

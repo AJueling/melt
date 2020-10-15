@@ -1,19 +1,10 @@
 import sys
 import numpy as np
-import pandas as pd
 import xarray as xr
 
-from geometry import ModelGeometry, glaciers, path_results
+from geometry import ModelGeometry, glaciers, path, noPICO, table2
 from constants import ModelConstants
 
-# ice shelves not listes in PICO publication
-# n from Fig. 3, Ta/Sa from Fig. 2;                             # drainage basin
-noPICO = {'Amery'           : {'n':3, 'Ta':-1.73, 'Sa':34.70},  #  6
-          'MoscowUniversity': {'n':2, 'Ta':-0.73, 'Sa':34.73},  #  8
-          'Dotson'          : {'n':2, 'Ta':+0.47, 'Sa':34.73},  # 14
-         }
-# Table 2 of Reese et al. (2018)
-table2 = pd.read_csv('../../doc/Reese2018/Table2.csv', index_col=0)
 
 class PicoModel(ModelConstants, ModelGeometry):
     """ 2D melt model by Reese et al. (2018), doi: 10.5194/tc-12-1969-2018
@@ -54,19 +45,19 @@ class PicoModel(ModelConstants, ModelGeometry):
         assert type(n)==int and n>0 and n<10 or n is None
         ModelConstants.__init__(self)
         self.name = name
-        if n is None:  n = self.find('n')
+        if n is None:  n = ModelGeometry.find(self.name, 'n')
         if ds is None:
             ModelGeometry.__init__(self, name=name, n=n)
-            self.ds = self.PICO().drop(['mapping', 'spatial_ref'])
+            self.ds = self.PICO_geometry()
         else:
             assert name=='test'
             self.ds = ds
-        if Ta is None:  Ta = self.find('Ta')
+        if Ta is None:  Ta = ModelGeometry.find(self.name, 'Ta')
         assert Ta>-3 and Ta<10
-        if Sa is None:  Sa = self.find('Sa')
+        if Sa is None:  Sa = ModelGeometry.find(self.name, 'Sa')
         assert Sa>0 and Sa<50
         self.n = n
-        self.fn_PICO_output = f'{path_results}/PICO/{name}_n{n}_Ta{Ta}_Sa{Sa}.nc'
+        self.fn_PICO_output = f'{path}/results/PICO/{name}_n{n}_Ta{Ta}_Sa{Sa}.nc'
 
         # hydrostatic pressure at each location(x,y)
         # assuming constant density
@@ -93,21 +84,6 @@ class PicoModel(ModelConstants, ModelGeometry):
         self.S[0] = Sa
         return
 
-    def find(self, q):
-        """ find quantitity `q` either from PICO publication or dict above """
-        if q=='n':     nPn, dfn = 'n', 'bn'
-        elif q=='Ta':  nPn, dfn = 'Ta', 'T0'
-        elif q=='Sa':  nPn, dfn = 'Sa', 'S0'
-        else:          raise ValueError('argument `q` needs to be `n`. `Ta` or `Sa`')
-        if self.name in noPICO:
-            Q = noPICO[self.name][nPn]
-        else:
-            
-            Q = table2[dfn].loc[self.name]
-        if q=='n':  Q = int(Q)
-        else:       Q = float(Q)
-        return Q
-    
     def T_s(self, k):
         """ spatially explicit $T^\star(x,y)$ temperature defined just above (A6) """
         return self.a*self.S[k-1]+self.b-self.c*self.pk[k]-self.T[k-1]
@@ -171,9 +147,6 @@ class PicoModel(ModelConstants, ModelGeometry):
         ds = xr.merge([self.p, self.M, T, S, m, q])
         ds.to_netcdf(self.fn_PICO_output)
         return self.ds, ds  # geometry dataset and PICO output dataset
-
-
-
 
 
 if __name__=='__main__':

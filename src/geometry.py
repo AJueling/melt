@@ -19,14 +19,12 @@ from tqdm.autonotebook import tqdm
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 if sys.platform=='darwin':  # my macbook
-    path_data = '/Users/Andre/git/melt/data'
-    path_results = '/Users/Andre/git/melt/results'
+    path = '/Users/Andre/git/melt'
 elif sys.platform=='linux':  # cartesius
-    path_data = '/home/ajueling/melt/data'
-    path_results = '/home/ajueling/melt/results'
+    path = '/home/ajueling/melt'
 
-fn_BedMachine = f'{path_data}/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
-fn_IceVelocity = f'{path_data}/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
+fn_BedMachine = f'{path}/data/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
+fn_IceVelocity = f'{path}/data/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
 
 glaciers = ['Amery',
             'Totten',
@@ -42,6 +40,14 @@ T_adv = {'Totten'          : 400,
          'MoscowUniversity': 400,
          'Thwaites'        : 200, 
         }
+# ice shelves not listes in PICO publication
+# n from Fig. 3, Ta/Sa from Fig. 2;                             # drainage basin
+noPICO = {'MoscowUniversity': {'n':2, 'Ta':-0.73, 'Sa':34.73},  #  8
+          'Dotson'          : {'n':2, 'Ta':+0.47, 'Sa':34.73},  # 14
+         }
+# Table 2 of Reese et al. (2018)
+table2 = pd.read_csv(f'{path}/doc/Reese2018/Table2.csv', index_col=0)
+
 
 class ModelGeometry(object):
     """ create geometry files for PICO and PICOP models """
@@ -53,14 +59,14 @@ class ModelGeometry(object):
         """
         assert name in glaciers
         self.name = name
-        if n is None:  self.n = 3
+        if n is None:  self.n = ModelGeometry.find(self.name, 'n')
         else:          self.n = n
-        self.fn_PICO = f'{path_results}/PICO/{name}_n{self.n}_geometry.nc'
-        self.fn_PICOP = f'{path_results}/PICOP/{name}_n{self.n}_geometry.nc'
-        self.fn_evo = f'{path_results}/advection/{name}_evo.nc'
-        self.fn_isf = f'{path_data}/mask_polygons/{name}_isf.geojson'
-        self.fn_grl = f'{path_data}/mask_polygons/{name}_grl.geojson'
-        self.fn_outline = f'{path_data}/mask_polygons/{name}_polygon.geojson'
+        self.fn_PICO = f'{path}/results/PICO/{name}_n{self.n}_geometry.nc'
+        self.fn_PICOP = f'{path}/results/PICOP/{name}_n{self.n}_geometry.nc'
+        self.fn_evo = f'{path}/results/advection/{name}_evo.nc'
+        self.fn_isf = f'{path}/data/mask_polygons/{name}_isf.geojson'
+        self.fn_grl = f'{path}/data/mask_polygons/{name}_grl.geojson'
+        self.fn_outline = f'{path}/data/mask_polygons/{name}_polygon.geojson'
         for fn in [self.fn_outline, self.fn_grl, self.fn_isf]:
             assert os.path.exists(fn), f'file does not exists:  {fn}'
         return
@@ -81,6 +87,21 @@ class ModelGeometry(object):
         if self.name in coarse_resolution:
             self.ds = self.ds.coarsen(x=5,y=5).mean()
         return
+
+    @staticmethod
+    def find(name, q):
+        """ find quantitity `q` either from PICO publication or dict above """
+        if q=='n':     nPn, dfn = 'n', 'bn'
+        elif q=='Ta':  nPn, dfn = 'Ta', 'T0'
+        elif q=='Sa':  nPn, dfn = 'Sa', 'S0'
+        else:          raise ValueError('argument `q` needs to be `n`, `Ta` or `Sa`')
+        if name in noPICO:
+            Q = noPICO[name][nPn]
+        else:
+            Q = table2[dfn].loc[name]
+        if q=='n':  Q = int(Q)
+        else:       Q = float(Q)
+        return Q
 
     def calc_draft(self):
         """  add draft ()=surface-thickness) to self.ds """
@@ -264,32 +285,17 @@ class ModelGeometry(object):
             . area   .. (float)  area of each box [m^2]
         """
         if os.path.exists(self.fn_PICO) and new==False:
-            print('load PICO nc file')
+            print(f'\n--- load PICO geometry file: {self.name} ---')
             self.ds = xr.open_dataset(self.fn_PICO)
         else:
-            print(f'\n --- {self.name} ---\n')
-            print('self.select_geometry()')
+            print(f'\n--- generate PICO geometry {self.name} n={self.n} ---')
             self.select_geometry()
-
-            print('self.calc_draft()')
             self.calc_draft()
-
-            print('self.determine_grl_isf()')
             self.determine_grl_isf()
-
-            print('self.find_distances()')
             self.find_distances()
-
-            print('self.add_latlon()')
             self.add_latlon()
-
-            print('self.define_boxes()')
             self.define_boxes()
-
-            print('self.calc_area()')
             self.calc_area()
-
-            # print('self.ds.to_netcdf(self.fn_PICO)')
             self.ds.drop(['mapping', 'spatial_ref']).to_netcdf(self.fn_PICO)
         return self.ds
 
@@ -354,7 +360,7 @@ class ModelGeometry(object):
         else:                   T = 500
         kw_isel = dict(x=slice(1,-1), y=slice(1,-1))  # remove padding
         evo = advect_grl(ds=ds, eps=1/50, T=T, plots=False).isel(**kw_isel)
-        evo.to_netcdf(self.fn_evo)
+        # evo.to_netcdf(self.fn_evo)
         self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
         return
 
@@ -409,7 +415,6 @@ class ModelGeometry(object):
         self.ds['beta']  = beta
         return
 
-
     def PICOP_geometry(self, new=False):
         """ creates geometry Dataset for PICOP model containing
         all PICO DataArrays
@@ -417,9 +422,10 @@ class ModelGeometry(object):
         v  .. y-velocity
         """
         if os.path.exists(self.fn_PICOP) and new==False:
-            print(f'\n --- {self.name} ---\n')
+            print(f'\n--- load PICOP geometry file: {self.name} ---')
             self.ds = xr.open_dataset(self.fn_PICOP)
         else:
+            print(f'\n--- generate PICOP geometry {self.name} n={self.n} ---')
             self.PICO_geometry()  # create or load all fields for PICO
             self.interpolate_velocity()
             self.adv_grl()
