@@ -12,65 +12,67 @@ class PlumeModel(ModelConstants):
         equation and table numbers refer to publication (doi: 10.1175/JPO-D-18-0131.1)
         
         input:
-        X   ..  [m]     distance from grounding line
-        zb  ..  [m]     ice shelf depth
-        Ta  ..  [degC]  ambient temperature
-        Ta  ..  [psu]   ambient salinity
+        dp  ..  xr.Dataset for Plume model containing
+                name      dims/coords    unit  quantity
+            .   dgrl        (x)/(x,y)     [m]  distance to grounding line
+            .   draft       (x)/(x,y)     [m]  depth of ice shelf
+            .   alpha    ()/(x)/(x,y)   [rad]  local angle
+            .   grl_adv     (x)/(x,y)     [m]  advected grounding line depth
+            .   Ta [*]   ()/(x)/(x,y)  [degC]  ambient temperature
+            .   Sa [*]   ()/(x)/(x,y)   [psu]  ambient salinity
+            [*] vary only in PICOP model, taken from PICO model
         
-        output:  [calling `.compute()`]
-        ds  ..  xarray Dataset holding all quantities with their coordinates
+        output:  [calling `.compute_plume()`]
+        ds  ..  xr.Dataset holding additional quantities with their coordinates
     """
     
-    def __init__(self, X, zb, Ta, Sa):
+    def __init__(self, dp):
         ModelConstants.__init__(self)
-        assert len(X)==len(zb)
-        assert X[0]==0  # (starting at grounding line)
-        self.X  = X
-        self.Ta = Ta
-        self.Sa = Sa
-        N   = len(X)
-        # geometry and dependent variables
-        zgl = zb[0]  # grounding line depth [m]
-        self.Tf0 = self.l1*self.Sa + self.l2 + self.l3*zgl
-                        # freezing point at grounding line, eqn (7)
-        Tf = self.l1*self.Sa + self.l2 + self.l3*zb
-                        # freezing point at ice sheet base,
-                        # should be eqn (8), but adapted for non-uniform slope
-        alpha = np.arctan(np.gradient(zb, X)) 
-                        # angle at each position X
+        assert type(dp)==xr.core.dataset.Dataset
+        assert 'x' in dp.coords
+        if 'y' in dp.coords:  self.mode = '2D'
+        else:                 self.mode = '1D'
+        for q in ['dgrl', 'draft', 'alpha','grl_adv','Ta','Sa']:
+            assert q in dp
+        self.dp = dp
 
+        def freezing_point(depth):
+            return self.l1*self.dp.Sa + self.l2 + self.l3*depth
+        # freezing point at corresponding grounding line, eqn (7)
+        self.dp['Tf0'] = freezing_point(self.dp.grl_adv)
+        self.dp.Tf0.attrs['long_name'] = 'pressure freezing point at corresponding grounding line'
+        # freezing point at ice sheet base, should be eqn (8), but adapted for non-uniform slope  
+        self.dp['Tf'] = freezing_point(self.dp.draft)
+        self.dp.Tf.attrs['long_name'] = 'local pressure freezing point'
+        self.dp.Tf.attrs['units'] = '[degC]'
+                        
         
-        # calculate dimensionless coordinate x_=$\tilde{x}$ (28b)
-        self.Ea = self.E0*np.sin(alpha)
-        x_ = self.l3*(zb-zgl)/(self.Ta-self.Tf0)/\
-             (1+self.Ce*(self.Ea/(self.CG+self.ct+self.Ea))**(3/4))
+        # calculate dimensionless coordinate dgrl_=$\tilde{x}$ (28b)
+        self.Ea = self.E0*np.sin(self.dp.alpha)
+        self.dp['dgrl_'] = self.l3*(self.dp.draft-self.dp.grl_adv)/(self.dp.Ta-self.dp.Tf0)/\
+                           (1+self.Ce*(self.Ea/(self.CG+self.ct+self.Ea))**(3/4))
+        self.dp.dgrl_.attrs['long_name'] = 'dimensionless coordinate tilde{x} in limited range [0,1); eqn. (28b)'
             
         # reused parameter combinations
-        self.f1 = self.bs*self.Sa*self.g/(self.l3*(self.L/self.cp)**3)
+        self.f1 = self.bs*self.dp.Sa*self.g/(self.l3*(self.L/self.cp)**3)
         self.f2 = (1-self.cr1*self.CG)/(self.Cd+self.Ea)
         self.f3 = self.CG*self.Ea/(self.CG+self.ct*self.Ea)
-        
-        # create xarray Dataset to contain quantities
-        data_vars = {'zb':('X',zb), 'Tf':('X',Tf)}
-        coords = {'x':np.linspace(0,1,51),
-                  'x_':x_,
-                  'X':X
-                 }
-        self.ds = xr.Dataset(data_vars, coords=coords)
+
         return
         
     def nondim_M(self, x):
         """ nondimensional melt rate, eqn. (26)
-        input:  x .. nondimensional locations, either x or x_ 
+        input:
+        x .. nondimensional locations, either x or x_
         """
         return (3*(1-x)**(4/3)-1)*np.sqrt(1-(1-x)**(4/3))/(2*np.sqrt(2))
     
     def dim_M(self):
         """ dimensional melt rate in [m/yr], eqn. (28a)
-        needs nondimensional melt rate at x_
+        needs nondimensional melt rate at dgrl_
         """
-        assert 'M_' in self.ds
-        return np.sqrt(self.f1*self.f2*self.f3**3)*(self.Ta-self.Tf0)**2*self.ds['M_']
+        assert 'M' in self.dp
+        return np.sqrt(self.f1*self.f2*self.f3**3)*(self.dp.Ta-self.dp.Tf0)**2*self.dp.M
     
     def phi0(self, x):
         """ non-dimensional cavity circulation, eqn. (25) """
@@ -78,33 +80,33 @@ class PlumeModel(ModelConstants):
     
     def Phi(self):
         """ dimensional cavity circulation, eqn. (29) """
-        return self.E0*np.sqrt(self.f1*self.f2*self.f3)*(self.Ta-self.Tf0)**2*self.ds['phi0_']
+        return self.E0*np.sqrt(self.f1*self.f2*self.f3)*(self.dp.Ta-self.dp.Tf0)**2*self.dp.phi0
     
-    def compute_plume(self):
+
+    def compute_plume(self, full_nondim=False):
         """ combines all output into single xarray dataset """
+        def compute_nondimensional(x):
+            """ both nondim melt rate and circulation """
+            M = self.nondim_M(x)
+            M.attrs['long_name'] = 'dimensionless meltrate; eqn. (26)'
+            phi0 = self.phi0(x)
+            phi0.attrs['long_name'] = 'dimensionless circulation; eqn. (25)'
+            return M, phi0
+
         # calculations
-        self.ds['M']  = ('x' , self.nondim_M(self.ds.x))
-        self.ds['M_'] = ('x_', self.nondim_M(self.ds.x_))
-        self.ds['m']  = ('X' , self.dim_M())
+        self.dp['M'], self.dp['phi0'] = compute_nondimensional(self.dp.dgrl_)
+
+        self.dp['m']  = self.dim_M()*3600*24*365  # [m/s] -> [m/yr]
+        self.dp.m.attrs['long_name'] = 'dimensional meltrates; eqn. (28a)'
+        self.dp.m.attrs['units'] = '[m/yr]'
         
-        self.ds['phi0']  = ('x' , self.phi0(self.ds.x))
-        self.ds['phi0_'] = ('x_', self.phi0(self.ds.x_))
-        self.ds['Phi']   = ('X' , self.Phi())
+        self.dp['Phi']   = self.Phi()
+        self.dp.Phi.attrs['long_name'] = 'dimensional circulation; eqn. (29)'
+        self.dp.Phi.attrs['units'] = '[m^3/s]'
+
+        if full_nondim:   # compute non-dimensional 1D melt curve for full [0,1] interval
+            self.dp = self.dp.assign_coords({'x_':np.linspace(0,1,51)})
+            self.dp.x_.attrs['long_name'] = 'non-dimensional coordinates in [0,1]'
+            self.dp['M_full'], self.dp['phi0_full'] = compute_nondimensional(self.dp.coords['x_'])
         
-        # metadata
-        attrs = {'X' :'dimensional coordinate $X$ [m]',
-                 'x' :'dimensionless coordinate $x$ in full range [0,1)',
-                 'x_':'dimensionless coordinate tilde{x} in limited range [0,1); eqn. (28b)',
-                 'zb':'dimensional depths at X [m]',
-                 'Tf':'pressure freezing points at X [degC]',
-                 'M' :'dimensionless meltrate at x; eqn. (26)',
-                 'M_':'dimensionless meltrate at x_; eqn. (26)',
-                 'm' :'dimensional meltrates at X [m/s]; eqn. (28a)',
-                 'phi0' :'dimensionless circulation at x; eqn. (25)',
-                 'phi0_':'dimensionless circulation at x_; eqn. (25)',
-                 'Phi'  :'dimensional circulation, eqn. (29)',
-                
-                }
-        self.ds.attrs = attrs
-        
-        return self.ds
+        return self.dp

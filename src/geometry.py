@@ -1,29 +1,32 @@
 import os
-import dask
+import sys
 import numpy as np
 import xesmf as xe
 import pyproj
 import xarray as xr
 import pandas as pd
+import warnings
 import rioxarray
 import geopandas
 import matplotlib
 import matplotlib.pyplot as plt
 
+from advect import advect_grl
 from shapely.geometry import mapping
+from tqdm.autonotebook import tqdm
+
+# to suppress xarray's "Mean of empty slice" warning
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 if sys.platform=='darwin':  # my macbook
-    data = '/Users/Andre/git/melt/data'
-    results = '/Users/Andre/git/melt/results'
+    path = '/Users/Andre/git/melt'
 elif sys.platform=='linux':  # cartesius
-    data = '/home/ajueling/melt/data'
-    results = '/home/ajueling/melt/results'
+    path = '/home/ajueling/melt'
 
-fn_BedMachine = f'{data}/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
-fn_IceVelocity = f'{data}/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
-fn_IceVelocity_remapped = f'{data}/IceVelocity/IceVelocity_remapped_v01.nc'
+fn_BedMachine = f'{path}/data/BedMachine/BedMachineAntarctica_2020-07-15_v02.nc'
+fn_IceVelocity = f'{path}/data/IceVelocity/antarctic_ice_vel_phase_map_v01.nc'
 
-glaciers = ['Lambert',
+glaciers = ['Amery',
             'Totten',
             'MoscowUniversity',
             'Ross',
@@ -32,9 +35,22 @@ glaciers = ['Lambert',
             'PineIsland',
             'FilchnerRonne',
            ]
+coarse_resolution = ['Ross', 'FilchnerRonne']
+T_adv = {'Totten'          : 400,
+         'MoscowUniversity': 400,
+         'Thwaites'        : 200, 
+        }
+# ice shelves not listes in PICO publication
+# n from Fig. 3, Ta/Sa from Fig. 2;                             # drainage basin
+noPICO = {'MoscowUniversity': {'n':2, 'Ta':-0.73, 'Sa':34.73},  #  8
+          'Dotson'          : {'n':2, 'Ta':+0.47, 'Sa':34.73},  # 14
+         }
+# Table 2 of Reese et al. (2018)
+table2 = pd.read_csv(f'{path}/doc/Reese2018/Table2.csv', index_col=0)
+
 
 class ModelGeometry(object):
-    """ create geometry files for PICO and PICOP """
+    """ create geometry files for PICO and PICOP models """
     def __init__(self, name, n=None):
         """
         input:
@@ -43,13 +59,14 @@ class ModelGeometry(object):
         """
         assert name in glaciers
         self.name = name
-        if n is None:
-            self.n = 3
-        self.fn_PICO = f'{results}/PICO/{name}.nc'
-        self.fn_PICOP = f'{results}/PICO/{name}.nc'
-        self.fn_isf = f'{data}/mask_polygons/{name}_isf.geojson'
-        self.fn_grl = f'{data}/mask_polygons/{name}_grl.geojson'
-        self.fn_outline = f'{data}/mask_polygons/{name}_polygon.geojson'
+        if n is None:  self.n = ModelGeometry.find(self.name, 'n')
+        else:          self.n = n
+        self.fn_PICO = f'{path}/results/PICO/{name}_n{self.n}_geometry.nc'
+        self.fn_PICOP = f'{path}/results/PICOP/{name}_n{self.n}_geometry.nc'
+        self.fn_evo = f'{path}/results/advection/{name}_evo.nc'
+        self.fn_isf = f'{path}/data/mask_polygons/{name}_isf.geojson'
+        self.fn_grl = f'{path}/data/mask_polygons/{name}_grl.geojson'
+        self.fn_outline = f'{path}/data/mask_polygons/{name}_polygon.geojson'
         for fn in [self.fn_outline, self.fn_grl, self.fn_isf]:
             assert os.path.exists(fn), f'file does not exists:  {fn}'
         return
@@ -58,6 +75,7 @@ class ModelGeometry(object):
     def select_geometry(self):
         """ selects the appropriate domain of BedMachine dataset 
         the polygon stored in the .geojson was created in QGIS
+        large ice shelves: grid sopacing is decreased to 2.5 km
         """
         ds = xr.open_dataset(fn_BedMachine)
         ds = ds.rio.set_spatial_dims(x_dim='x', y_dim='y')
@@ -65,7 +83,25 @@ class ModelGeometry(object):
         poly = geopandas.read_file(self.fn_outline, crs='espg:3031')
         self.clipped = ds.mask.rio.clip(poly.geometry.apply(mapping), poly.crs, drop=True)
         self.ds = ds.where(self.clipped)
+        #
+        if self.name in coarse_resolution:
+            self.ds = self.ds.coarsen(x=5,y=5).mean()
         return
+
+    @staticmethod
+    def find(name, q):
+        """ find quantitity `q` either from PICO publication or dict above """
+        if q=='n':     nPn, dfn = 'n', 'bn'
+        elif q=='Ta':  nPn, dfn = 'Ta', 'T0'
+        elif q=='Sa':  nPn, dfn = 'Sa', 'S0'
+        else:          raise ValueError('argument `q` needs to be `n`, `Ta` or `Sa`')
+        if name in noPICO:
+            Q = noPICO[name][nPn]
+        else:
+            Q = table2[dfn].loc[name]
+        if q=='n':  Q = int(Q)
+        else:       Q = float(Q)
+        return Q
 
     def calc_draft(self):
         """  add draft ()=surface-thickness) to self.ds """
@@ -89,7 +125,7 @@ class ModelGeometry(object):
                   xr.where(mask-mask.shift(x=-1)==diff, mask, 0) + \
                   xr.where(mask-mask.shift(y= 1)==diff, mask, 0) + \
                   xr.where(mask-mask.shift(y=-1)==diff, mask, 0)
-            new = new/new
+            new = new.where(mask==3)/new
             new.name = line
             new = new.rio.set_spatial_dims(x_dim='x', y_dim='y')
             new = new.rio.write_crs('epsg:3031')
@@ -99,12 +135,10 @@ class ModelGeometry(object):
 
         grl  = find_grl_isf('grl')
         isf  = find_grl_isf('isf')
-        # print(self.ds)
-        # print(grl)
-        # print(isf)
         # now new `mask`: ice shelf = 1, rest = 0
         mask = xr.where(self.ds['mask']==3, 1, 0)
-        self.ds = self.ds.drop('mask')
+        self.ds = self.ds.rename({'mask':'mask_orig'})
+        # self.ds = self.ds.drop('mask')
         self.ds = xr.merge([self.ds, mask, grl, isf])
         return
 
@@ -221,8 +255,8 @@ class ModelGeometry(object):
         introduce boxnr coordinate
         assumes regularly space coordinates named x and y
         """
-        dx = self.ds.x[1]-self.ds.x[0]
-        dy = self.ds.y[1]-self.ds.y[0]
+        dx = abs(self.ds.x[1]-self.ds.x[0])
+        dy = abs(self.ds.y[1]-self.ds.y[0])
         self.ds['area'] = dx*dy*self.ds.mask
         A = np.zeros((self.n+1))
         A[0] = (self.ds.mask*self.ds.area).sum(['x','y'])
@@ -232,7 +266,7 @@ class ModelGeometry(object):
         self.ds['area_k'] = xr.DataArray(data=A, dims='boxnr', coords={'boxnr':np.arange(self.n+1)})
         return
 
-    def PICO(self):
+    def PICO_geometry(self, new=False):
         """ creates geometry Dataset for PICO model containing
         coordinates:
         x, y    .. from BedMachine dataset [m]
@@ -250,51 +284,33 @@ class ModelGeometry(object):
             . box    .. (int)    box number [1,...,n]
             . area   .. (float)  area of each box [m^2]
         """
-        if os.path.exists(self.fn_PICO):
+        if os.path.exists(self.fn_PICO) and new==False:
+            print(f'\n--- load PICO geometry file: {self.name} ---')
             self.ds = xr.open_dataset(self.fn_PICO)
         else:
-            print(f'\n --- {self.name} ---\n')
-            print('self.select_geometry()')
+            print(f'\n--- generate PICO geometry {self.name} n={self.n} ---')
             self.select_geometry()
-
-            print('self.calc_draft()')
             self.calc_draft()
-
-            print('self.determine_grl_isf()')
             self.determine_grl_isf()
-
-            print('self.find_distances()')
             self.find_distances()
-
-            print('self.add_latlon()')
             self.add_latlon()
-
-            print('self.define_boxes()')
             self.define_boxes()
-
-            print('self.calc_area()')
             self.calc_area()
-
-            # print('self.ds.to_netcdf(self.fn_PICO)')
-            self.ds.to_netcdf(self.fn_PICO)
+            self.ds.drop(['mapping', 'spatial_ref']).to_netcdf(self.fn_PICO)
         return self.ds
 
     def plot_PICO(self):
         """ plots all PICOP fields """
-        print(self.fn_PICO)
         if os.path.exists(self.fn_PICO):
-            print(self.fn_PICO, ' exists')
-            
             ds = xr.open_dataset(self.fn_PICO)
         else:
             ds = self.PICO()
-        divnorm = matplotlib.colors.DivergingNorm(vmin=-3000., vcenter=0, vmax=500)
         kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
         f, ax = plt.subplots(1, 5, figsize=(15,5), constrained_layout=True, sharey=True, sharex=True)
         ds.draft.name = 'draft [meters]'
         ds.draft.plot(ax=ax[0], cmap='plasma', **kwargs, vmax=0)
         ds.grl.where(ds.grl>0).plot(ax=ax[0], cmap='Blues', add_colorbar=False)
-        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds'   , add_colorbar=False)
+        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds' , add_colorbar=False)
         ds.disf.name = 'to ice shelf front [km]'
         (ds.disf/1e3).plot(ax=ax[1], **kwargs)
         ds.dgrl.name = 'to grounding line [km]'
@@ -307,75 +323,167 @@ class ModelGeometry(object):
         return
 
     ### PICOP methods
-    def select_velocity(self):
-        """ selects the appropriate domain """
-        self.vel = xr.open_dataset(fn_IceVelocity).where(self.ds)
-        return
-
     def interpolate_velocity(self):
         """ interpolates 450 m spaced velocity onto geometry (500 m spaced) grid 
         add new velocity fields (`u` and `v`) to dataset `self.ds`
         interpolation
         """
-        if os.path.exists(fn_IceVelocity_remapped):
-            vel = xr.open_dataset(fn_IceVelocity_remapped)
-        else:  
-            ds  = xr.open_dataset(fn_BedMachine)
-            vel = xr.open_dataset(fn_IceVelocity)
+        xlim = slice(self.ds.x[0],self.ds.x[-1])
+        ylim = slice(self.ds.y[0],self.ds.y[-1])
+        vel = xr.open_dataset(fn_IceVelocity)
+        vel = vel.sel({'x':xlim, 'y':ylim})
 
-            # create new lat/lon coords for dataset `ds`
-            project = pyproj.Proj("epsg:3031")
-            xx, yy = np.meshgrid(ds.x, ds.y)
-            lons, lats = project(xx, yy, inverse=True)
-            dims = ['y','x']
-            ds = ds.assign_coords({'lat':(dims,lats), 'lon':(dims,lons)})
+        # create new lat/lon coords for dataset `ds` to enable regridding
+        project = pyproj.Proj("epsg:3031")
+        xx, yy = np.meshgrid(self.ds.x, self.ds.y)
+        lons, lats = project(xx, yy, inverse=True)
+        dims = ['y','x']
+        self.ds = self.ds.assign_coords({'lat':(dims,lats), 'lon':(dims,lons)})
 
-            regridder = xe.Regridder(self.vel, self.ds, 'bilinear')
-            u = regridder(self.vel.VX)
-            v = regridder(self.vel.VY)
-            u.name = 'u'
-            v.name = 'v'
-        self.ds = xr.merge([self.ds, vel.u, vel.v])
+        regridder = xe.Regridder(vel, self.ds, 'bilinear')#, reuse_weights=True)
+        u = regridder(vel.VX)
+        v = regridder(vel.VY)
+        u.name = 'u'
+        v.name = 'v'
+        self.ds = xr.merge([self.ds, u, v])
         return
 
-    def calc_alpha(self):
-        """ local slope angle alpha (x,y) based on draft """
-        self.ds['alpha'] = 0
+    def adv_grl(self):
+        """ solves advection-diffusion equation as described in Pelle et al. (2019)
+        uses `advect_grl` frunction from `advect.py`
+        
+        """
+        ds = self.ds
+        ds['u'] = ds.u.fillna(0)
+        ds['v'] = ds.v.fillna(0)
+        if self.name in T_adv:  T = T_adv[self.name]
+        else:                   T = 500
+        kw_isel = dict(x=slice(1,-1), y=slice(1,-1))  # remove padding
+        evo = advect_grl(ds=ds, eps=1/50, T=T, plots=False).isel(**kw_isel)
+        # evo.to_netcdf(self.fn_evo)
+        self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
         return
 
-    def PICOP(self):
+    def calc_angles(self):
+        """ local slope angles (in radians)
+        based on (smoothed) draft field `D` and velocity flowlines `F`
+
+        n1    .. vector perpendicular to scalar draft field
+        n2    .. horizontal flowline vector field `F`
+        n3    .. vertical unit vector = [0,0,1]
+        alpha .. slope angle with respect to flowlines, i.e. b/w n1 and n3
+        beta  .. maximum slope angle, i.e. between n1 and n2,
+                 is also the angle between the plane and the horizontal
+        
+        using the four points one grid point away in the x and y directions
+        calculate the normal vector to the two x ad y-slopes `n1 = xslope x yslope`
+        `n_1 = [-2*dy*(a_{i+1}-a_{i-1}), -2*dx*(a_{j+1}-a_{j-1}), 4*dx*dy]`
+        where `a` is the draft, `dx` and `dy` are the grid spacings
+
+        the flow vectors are perpendicular to the gradient of flowline field A
+        `\nabla F = [dF/dx, dF/dy]` so that `n2 = [-dFdy, dFdx, 0]` 
+        this garantuees orthogonality `\nabla A \cdot n2 = 0`
+
+        the inner product of vectors `a` and `b` contains the angle `gamma`
+        `a \cdot b = |a| |b| \cos \gamma`
+        `\gamma = \arccos ( \frac{a \cdot b}{|a|*|b|} )`
+        """
+        if self.name in coarse_resolution:
+            D = self.ds.draft
+        else:  # smoothing `draft` with a rolling mean first
+            D = (self.ds.draft.rolling(x=5).mean()+self.ds.draft.rolling(y=5).mean())/2
+        dx, dy = D.x[1]-D.x[0], D.y[1]-D.y[0]
+        dxdy = abs((D.y-D.y.shift(y=1))*(D.x-D.x.shift(x=1)))
+        ip = D.shift(x=-1)
+        im = D.shift(x= 1)
+        jp = D.shift(y=-1)
+        jm = D.shift(y= 1)
+        n1 = np.array([-2*dy*(ip-im), -2*dx*(jp-jm), 4*dxdy])
+        n1_norm = np.linalg.norm(n1, axis=0)
+
+        gradF = np.gradient(self.ds['grl_adv'], dx.values)
+        dFdx = xr.DataArray(data=gradF[1], dims=D.dims, coords=D.coords)
+        dFdy = xr.DataArray(data=gradF[0], dims=D.dims, coords=D.coords)
+        n2 = np.array([-dFdy, dFdx, xr.zeros_like(dFdx)])
+        n2_norm = np.linalg.norm(n2, axis=0)
+        del n2
+
+        alpha = np.arccos((-dFdy*n1[0]+dFdx*n1[1])/n1_norm/n2_norm)
+        alpha = abs(alpha-90)
+        beta = np.arccos(4*dxdy/n1_norm) # n3 already normalized
+        self.ds['alpha'] = alpha
+        self.ds['beta']  = beta
+        return
+
+    def PICOP_geometry(self, new=False):
         """ creates geometry Dataset for PICOP model containing
         all PICO DataArrays
         u  .. x-velocity
         v  .. y-velocity
         """
-        if os.path.exists(self.fn_PICOP):
+        if os.path.exists(self.fn_PICOP) and new==False:
+            print(f'\n--- load PICOP geometry file: {self.name} ---')
             self.ds = xr.open_dataset(self.fn_PICOP)
         else:
-            self.PICO()  # create all fields for PICO
+            print(f'\n--- generate PICOP geometry {self.name} n={self.n} ---')
+            self.PICO_geometry()  # create or load all fields for PICO
             self.interpolate_velocity()
-            self.select_velocity()
-            self.calc_alpha()
-            self.ds.to_netcdf(self.fn_PICOP)
+            self.adv_grl()
+            self.calc_angles()
+            self.ds.to_netcdf(self.fn_PICOP) # .drop(['mapping', 'spatial_ref'])
         return self.ds
 
     def plot_PICOP(self):
         """ plots important PICO fields + interpolated velocity """
-        # xx, yy = np.meshgrid(vel.x, vel.y)
-        # plt.figure(figsize=(10,5), constrained_layout=True)
+        if os.path.exists(self.fn_PICOP):
+            ds = xr.open_dataset(self.fn_PICOP)
+        else:
+            ds = self.PICOP_geometry()
+        
+        f, ax = plt.subplots(1, 4, figsize=(12,5), constrained_layout=True, sharey=True)
+        kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
+
+        # draft 
+        ds.draft.name = 'draft [meters]'
+        ds.draft.plot(ax=ax[0], cmap='plasma', **kwargs, vmax=0)
+        ds.grl.where(ds.grl>0).plot(ax=ax[0], cmap='Blues', add_colorbar=False)
+        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds' , add_colorbar=False)
 
         # velocity stream
-        # np.sqrt(vel.VX**2+vel.VY**2).plot(cbar_kwargs={'label':'velocity  [m/yr]'})
-        # plt.streamplot(xx, yy, vel.VX, vel.VY, color='w', linewidth=np.sqrt(vel.VX**2+vel.VY**2).fillna(0).values/5e2)
-        pass
+        vel = np.sqrt(ds.u**2+ds.v**2)
+        vel.name = 'velocity [m/yr]'
+        xx, yy = np.meshgrid(ds.x, ds.y)
+        vel.plot(ax=ax[1], **kwargs)
+        ax[1].streamplot(xx, yy, ds.u, ds.v, color='w', linewidth=vel.fillna(0).values/5e2)
+
+        # alpha
+        ds.alpha.name = 'local angle [$^\circ$]'
+        ds.alpha.plot(ax=ax[2], **kwargs)
+
+        # advected grounding line
+        ds.grl_adv.name = 'advected grl depth'
+        ds.grl_adv.plot(ax=ax[3], **kwargs)
+
+        f.suptitle(f'{self.name} Ice Shelf', fontsize=16)
+        return
 
 
 if __name__=='__main__':
-    """ calculate the Totten IS example """
-    # for glacier in glaciers:
-    #     ModelGeometry(name=glacier).PICO()
-    # ModelGeometry(name='Totten').PICO()
-    ModelGeometry(name='MoscowUniversity').PICO()
-    ModelGeometry(name='Dotson').PICO()
-    ModelGeometry(name='Thwaites').PICO()
-    ModelGeometry(name='PineIsland').PICO()
+    """ calculate geometries for individual or all glaciers
+    called as `python geometry.py new {glacier_name}`
+    """
+    new = False  # skip calc if files exist; this is the default
+    if len(sys.argv)>1:
+        if sys.argv[1]=='new':
+            new = True   # overwrite existing files
+
+    if len(sys.argv)>2:  # if glacier is named, only calculate geometry for this one
+        glacier = sys.argv[2]
+        assert glacier in glaciers, f'input {glacier} not recognized, must be in {glaciers}'
+        ModelGeometry(name=glacier).PICO_geometry(new=new)
+        ModelGeometry(name=glacier).PICOP_geometry(new=new)
+    else:  # calculate geometry for all glaciers
+        for i, glacier in enumerate(glaciers):
+            if i in [0,3,7]:  continue
+            ModelGeometry(name=glacier).PICO_geometry(new=new)
+            ModelGeometry(name=glacier).PICOP_geometry(new=new)

@@ -1,19 +1,19 @@
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
-from tqdm.notebook import tqdm
+from tqdm.autonotebook import tqdm
 
 
 zgl = r'$z_{gl}(x,y)'
 
-def advect_grl(ds, eps, T):
+def advect_grl(ds, eps, T, verbose=True, plots=True):
     """ function to advect grounding line depth as described in Pelle at al (2019) 
     using centered finite different in space and RK4 in time with backward derivatives
     (https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta_methods)
     
     input:
     ds  .. [xr.DataSet]     containing
-                            x/y   .. grid coordinates  [m]
+                            x/y   .. grid coordinates of size nx/ny [m]
                             grl   .. binary mask identifying grounding line 
                             draft .. includes grl depth at grl mask [m]
                             u/v   .. x/y velocities  [m/yr]
@@ -21,18 +21,17 @@ def advect_grl(ds, eps, T):
     eps .. [float]          diffusion constant epsilon scaled with dx**2,
                             decent values around 1/25
     
-    
     output:
     evo .. [xr.DataArray]  (ny,nx,nt) evolution of grounding line depths $z_{gl}$ in [m]
     """
     dx = (ds.x[1]-ds.x[0]).values
     dy = (ds.y[1]-ds.y[0]).values
     if dx<0:
-        print('inverting x-coordinates')
+        if verbose:  print('inverting x-coordinates')
         ds = ds.reindex(x=list(reversed(ds.x)))
         dx = -dx
     if dy<0:
-        print('inverting y-coordinates')
+        if verbose:   print('inverting y-coordinates')
         ds = ds.reindex(y=list(reversed(ds.y)))
         dy = -dy
     eps *= dx**2
@@ -43,9 +42,10 @@ def advect_grl(ds, eps, T):
     if maxvel==0:  dt = .1  # for test cases with diffusion only
     else:          dt = dx/maxvel/2  # time step in [years]
     Nt = int(T/dt)+1
-    print(f'dx = {dx} m;  dy = {dy} m;  maxvel = {maxvel} m/yr')
-    print(f'min(draft) = {draftmin:.2f} m;  max(draft) = {draftmax:.2f} m')
-    print(f'dt = {dt} yr;  Nt = {Nt}; T = {T} yr')
+    if verbose:
+        print(f'dx = {dx} m;  dy = {dy} m;  maxvel = {maxvel} m/yr')
+        print(f'min(draft) = {draftmin:.2f} m;  max(draft) = {draftmax:.2f} m')
+        print(f'dt = {dt} yr;  Nt = {Nt}; T = {T} yr')
     
     ds = ds.pad(x=1, mode='edge')
     ds = ds.pad(y=1, mode='edge')
@@ -104,18 +104,20 @@ def advect_grl(ds, eps, T):
         evo[:,:,t] = xr.where(evo[:,:,t]>draftmax, draftmax, evo[:,:,t])  #
     evo = evo.where(ds.mask==1)  # mask out everything outside ice shelf
     
-    # convergence plot
-    plt.figure(figsize=(6.4,4), constrained_layout=True)
-    (np.sqrt((evo-evo.shift(time=-1))**2)/ds.mask.sum().values)\
-    .sum(dim=['x','y']).plot()
-    plt.axhline(0, c='k', lw=.5)
-    #plt.yscale('log')
-    plt.ylabel(r'$\frac{1}{N}\Sigma\sqrt{(z_t-z_{t-1})^2}$  [m]')
-    plt.xlabel('time [yr]')
-    
-    # final z_{gl} plot
-    plt.figure(figsize=(6.4,4), constrained_layout=True)
-    evo.isel(time=-1).plot(label=zgl)
-    plt.title(f'final {zgl} at time={evo.time[-1].values} years')
-    
+    if plots:
+        # convergence plot
+        plt.figure(figsize=(6.4,4), constrained_layout=True)
+        (np.sqrt((evo-evo.shift(time=-1))**2)/ds.mask.sum().values)\
+        .sum(dim=['x','y']).plot()
+        plt.axhline(0, c='k', lw=.5)
+        #plt.yscale('log')
+        plt.ylabel(r'$\frac{1}{N}\Sigma\sqrt{(z_t-z_{t-1})^2}$  [m]')
+        plt.xlabel('time [yr]')
+        plt.show()
+
+        # final z_{gl} plot
+        plt.figure(figsize=(6.4,4), constrained_layout=True)
+        evo.isel(time=-1).plot(label=zgl)
+        plt.title(f'final {zgl} at time={evo.time[-1].values} years')
+        plt.show()
     return evo
