@@ -36,8 +36,6 @@ class SheetModel(ModelConstants):
         self.x  = ds.x
         self.y  = ds.y
         self.mask= ds.mask
-        self.grl= ds.grl
-        self.isf= ds.isf
         self.zb = ds.zb
         self.Ta = ds.Ta
         self.Sa = ds.Sa
@@ -67,18 +65,25 @@ class SheetModel(ModelConstants):
         #assert sum(self.mask*self.grl) == 0
         #assert sum(self.mask*self.isf) == 0
         
-        self.isfE = self.isf*self.mask.roll(x= 1,roll_coords=False)
-        self.isfN = self.isf*self.mask.roll(y= 1,roll_coords=False)
-        self.isfW = self.isf*self.mask.roll(x=-1,roll_coords=False)
-        self.isfS = self.isf*self.mask.roll(y=-1,roll_coords=False)
+        self.tmask = xr.where(self.mask==1,1,0)
+        self.grd   = xr.where(self.mask==0,1,0)
+        self.ocn   = xr.where(self.mask==2,1,0)
         
-        self.grlE = self.grl*self.mask.roll(x= 1,roll_coords=False)
-        self.grlN = self.grl*self.mask.roll(y= 1,roll_coords=False)
-        self.grlW = self.grl*self.mask.roll(x=-1,roll_coords=False)
-        self.grlS = self.grl*self.mask.roll(y=-1,roll_coords=False)        
         
-        self.umask = (self.mask+self.isf)*(1-self.grl)*(1-self.grlE.roll(x=-1,roll_coords=False))
-        self.vmask = (self.mask+self.isf)*(1-self.grl)*(1-self.grlN.roll(y=-1,roll_coords=False))
+        self.isfE = self.ocn*self.tmask.roll(x= 1,roll_coords=False)
+        self.isfN = self.ocn*self.tmask.roll(y= 1,roll_coords=False)
+        self.isfW = self.ocn*self.tmask.roll(x=-1,roll_coords=False)
+        self.isfS = self.ocn*self.tmask.roll(y=-1,roll_coords=False)
+        self.isf  = self.isfE+self.isfN+self.isfW+self.isfS
+        
+        self.grlE = self.grd*self.tmask.roll(x= 1,roll_coords=False)
+        self.grlN = self.grd*self.tmask.roll(y= 1,roll_coords=False)
+        self.grlW = self.grd*self.tmask.roll(x=-1,roll_coords=False)
+        self.grlS = self.grd*self.tmask.roll(y=-1,roll_coords=False)
+        self.grl  = self.grlE+self.grlN+self.grlW+self.grlS
+        
+        self.umask = (self.tmask+self.isf)*(1-self.grl)*(1-self.grlE.roll(x=-1,roll_coords=False))
+        self.vmask = (self.tmask+self.isf)*(1-self.grl)*(1-self.grlN.roll(y=-1,roll_coords=False))
         
         return
     
@@ -146,21 +151,19 @@ class SheetModel(ModelConstants):
     
     def entr(self):
         """Entrainment """
-        return self.E0*(np.abs(self.im(self.u)*self.dzdx + self.jm(self.v)*self.dzdy))*self.mask
-        #return self.E0*(np.abs(self.im(self.u)*self.dzdx + self.jm(self.v)*self.dzdy))*self.mask
-        #return np.maximum(0,self.E0*(self.im(self.u)*self.dzdx + self.jm(self.v)*self.dzdy).values)*self.mask
+        return self.E0*(np.abs(self.im(self.u)*self.dzdx + self.jm(self.v)*self.dzdy))*self.tmask
 
     def melt(self,T):
         """Melt"""       
-        return self.cp/self.L*self.CG*(self.im(self.u)**2+self.jm(self.v)**2)**.5*(T-self.Tf)*self.mask
+        return self.cp/self.L*self.CG*(self.im(self.u)**2+self.jm(self.v)**2)**.5*(T-self.Tf)*self.tmask
     
     def rhsD(self,D,plot=False):
         """right hand side of d/dt D"""    
         
-        t1 = self.convT(D)*self.mask
+        t1 = self.convT(D)*self.tmask
         t2 = self.melt(self.T)
         t3 = self.entr()
-        t4 = self.Ah*self.lap(D)*self.mask
+        t4 = self.Ah*self.lap(D)*self.tmask
         
         if plot and self.t in np.arange(0,self.nt,self.plotint):
             fig,ax = plt.subplots(1,9,figsize=(30,4),sharex=True,sharey=True)
@@ -183,16 +186,16 @@ class SheetModel(ModelConstants):
             ax[4].set_title('diff')
             plt.show();
         
-        return (t1+t2+t3+t4)*self.mask
+        return (t1+t2+t3+t4)*self.tmask
 
     def rhsT(self,T,plot=False):
         """right hand side of d/dt T"""
         
         t1 = -T*self.dDdt
-        t2 =  self.convT(self.D*T)*self.mask
+        t2 =  self.convT(self.D*T)*self.tmask
         t3 =  self.entr()*self.Ta
         t4 =  self.melt(T)*(self.Tf - self.L/self.cp)
-        t5 =  self.D*self.Ah*self.lap(T)*self.mask
+        t5 =  self.D*self.Ah*self.lap(T)*self.tmask
         
         if plot and self.t in np.arange(0,self.nt,self.plotint):
             fig,ax = plt.subplots(1,9,figsize=(30,4),sharex=True,sharey=True)
@@ -219,15 +222,15 @@ class SheetModel(ModelConstants):
 
             plt.show();
 
-        return (t1+t2+t3+t4+t5)/self.D*self.mask
+        return (t1+t2+t3+t4+t5)/self.D*self.tmask
 
     def rhsS(self,S,plot=False):
         """right hand side of d/dt S"""
         
         t1 = -S*self.dDdt
-        t2 =  self.convT(self.D*S)*self.mask
+        t2 =  self.convT(self.D*S)*self.tmask
         t3 =  self.entr()*self.Sa
-        t4 =  self.D*self.Ah*self.lap(S)*self.mask
+        t4 =  self.D*self.Ah*self.lap(S)*self.tmask
 
         if plot and self.t in np.arange(0,self.nt,self.plotint):
             fig,ax = plt.subplots(1,9,figsize=(30,4),sharex=True,sharey=True)
@@ -251,7 +254,7 @@ class SheetModel(ModelConstants):
 
             plt.show();
         
-        return (t1+t2+t3+t4)/self.D*self.mask
+        return (t1+t2+t3+t4)/self.D*self.tmask
     
     def rhsu(self,u,plot=False):
         """right hand side of d/dt u"""
@@ -259,8 +262,8 @@ class SheetModel(ModelConstants):
         t1 = -u*self.ip(self.dDdt)        
         t2 =  (self.D*self.im(u)**2 - self.D.roll(x=-1,roll_coords=False)*self.ip(u)**2)/self.dx * self.umask        
         t3 =  (self.jm(self.ip(self.D))*self.jm(u)*self.ip(self.v.roll(y=-1,roll_coords=False)) - self.jp(self.ip(self.D))*self.jp(u)*self.ip(self.v))/self.dy * self.vmask
-        t4 =  self.ip(self.drho())*self.g*self.ip(self.D) * (self.zb.roll(x=-1,roll_coords=False) - self.zb)/self.dx * self.mask
-        t5 = -.5*self.g*((self.drho()*self.D*self.D).roll(x=-1,roll_coords=False) - self.drho()*self.D*self.D)/self.dx*self.mask
+        t4 =  self.ip(self.drho())*self.g*self.ip(self.D) * (self.zb.roll(x=-1,roll_coords=False) - self.zb)/self.dx * self.tmask
+        t5 = -.5*self.g*((self.drho()*self.D*self.D).roll(x=-1,roll_coords=False) - self.drho()*self.D*self.D)/self.dx * self.tmask
         t6 =  self.ip(self.D)*self.f*self.ip(self.jm(self.v))
         t7 = -self.Cd*u*np.abs(u)
         t8 =  self.ip(self.D)*self.Ah*self.lap(u)
@@ -299,7 +302,7 @@ class SheetModel(ModelConstants):
 
             plt.show();
         
-        return (t1+t2+t3+t4+t5+t6+t7+t8)/self.ip(self.D) * self.mask * self.umask
+        return (t1+t2+t3+t4+t5+t6+t7+t8)/self.ip(self.D) * self.tmask * self.umask
 
     def rhsv(self,v,plot=False):
         """right hand side of d/dt v"""
@@ -307,8 +310,8 @@ class SheetModel(ModelConstants):
         t1 = -v*self.jp(self.dDdt)
         t2 =  (self.im(self.jp(self.D))*self.jp(self.u.roll(x=-1,roll_coords=False))*self.im(v) - self.jp(self.ip(self.D))*self.jp(self.u)*self.ip(v))/self.dx * self.umask
         t3 =  (self.D*self.jm(v)**2 - self.D.roll(y=-1,roll_coords=False)*self.jp(v)**2)/self.dy * self.vmask
-        t4 =  self.jp(self.drho())*self.g*self.jp(self.D) * (self.zb.roll(y=-1,roll_coords=False) - self.zb)/self.dy * self.mask
-        t5 = -.5*self.g*((self.drho()*self.D*self.D).roll(y=-1,roll_coords=False) - self.drho()*self.D*self.D)/self.dy * self.mask
+        t4 =  self.jp(self.drho())*self.g*self.jp(self.D) * (self.zb.roll(y=-1,roll_coords=False) - self.zb)/self.dy * self.tmask
+        t5 = -.5*self.g*((self.drho()*self.D*self.D).roll(y=-1,roll_coords=False) - self.drho()*self.D*self.D)/self.dy * self.tmask
         t6 = -self.jp(self.D)*self.f*self.jp(self.im(self.u)) 
         t7 = -self.Cd*v*np.abs(v)
         t8 =  self.jp(self.D)*self.Ah*self.lap(v)
@@ -347,7 +350,7 @@ class SheetModel(ModelConstants):
 
             plt.show();
             
-        return (t1+t2+t3+t4+t5+t6+t7+t8)/self.ip(self.D) * self.mask * self.vmask
+        return (t1+t2+t3+t4+t5+t6+t7+t8)/self.ip(self.D) * self.tmask * self.vmask
     
     def intD(self):
         """integrate d/dt D"""
@@ -454,11 +457,11 @@ class SheetModel(ModelConstants):
         x = np.append(self.x.values,self.x[-1].values+self.dx.values)-self.dx.values/2
         y = np.append(self.y.values,self.y[-1].values+self.dy.values)-self.dy.values/2
         if symm:
-            im = dax.pcolormesh(x,y,xr.where(self.mask,var,np.nan).values,cmap=plt.get_cmap(cmap),vmax=np.max(np.abs(var)),vmin=-np.max(np.abs(var)))
+            im = dax.pcolormesh(x,y,xr.where(self.tmask,var,np.nan).values,cmap=plt.get_cmap(cmap),vmax=np.max(np.abs(var)),vmin=-np.max(np.abs(var)))
         else:
-            im = dax.pcolormesh(x,y,xr.where(self.mask,var,np.nan).values,cmap=plt.get_cmap(cmap))
+            im = dax.pcolormesh(x,y,xr.where(self.tmask,var,np.nan).values,cmap=plt.get_cmap(cmap))
         if strm:
-            dax.streamplot(self.x.values,self.y.values,self.u.values*self.umask.values*self.mask.values,self.v.values*self.vmask.values*self.mask.values,density=[.5,1],color='tab:orange')
+            dax.streamplot(self.x.values,self.y.values,self.u.values*self.umask.values*self.tmask.values,self.v.values*self.vmask.values*self.tmask.values,density=[.5,1],color='tab:orange')
             
         plt.colorbar(im,ax=dax,orientation='horizontal')
         dax.set_title(title)
@@ -479,7 +482,7 @@ class SheetModel(ModelConstants):
         #        self.plotpanel(ax[0,0],(self.grlN+self.isfN)>0,'cmo.speed','grlN',symm=False)
         #        self.plotpanel(ax[1,0],self.isfN,'cmo.speed','isfN',symm=False)
         #        self.plotpanel(ax[0,1],self.grl,'cmo.speed','grl',symm=False)
-        #        self.plotpanel(ax[1,1],(self.mask+self.isf)*(1-self.grl),'cmo.speed','umask',symm=False)
+        #        self.plotpanel(ax[1,1],(self.tmask+self.isf)*(1-self.grl),'cmo.speed','umask',symm=False)
      
                 self.plotpanel(ax[0,0],self.u*self.umask,'cmo.curl','u')
                 self.plotpanel(ax[1,0],self.dudt,'cmo.balance','du/dt')
