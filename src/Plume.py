@@ -5,8 +5,7 @@ from constants import ModelConstants
 
 
 class PlumeModel(ModelConstants):
-    """ plume melt model analytical solution
-        based on Lazeroms et al. (2018)
+    """ plume melt model analytical solution by Lazeroms et al. (2018)
         melt plume driven by the ice pump circulation
         assumes: small angle
         equation and table numbers refer to publication (doi: 10.1175/JPO-D-18-0131.1)
@@ -40,18 +39,17 @@ class PlumeModel(ModelConstants):
             return self.l1*self.dp.Sa + self.l2 + self.l3*depth
         # freezing point at corresponding grounding line, eqn (7)
         self.dp['Tf0'] = freezing_point(self.dp.grl_adv)
-        self.dp.Tf0.attrs['long_name'] = 'pressure freezing point at corresponding grounding line'
+        self.dp.Tf0.attrs = {'long_name':'pressure freezing point at corresponding grounding line'}
         # freezing point at ice sheet base, should be eqn (8), but adapted for non-uniform slope  
         self.dp['Tf'] = freezing_point(self.dp.draft)
-        self.dp.Tf.attrs['long_name'] = 'local pressure freezing point'
-        self.dp.Tf.attrs['units'] = '[degC]'
+        self.dp.Tf.attrs = {'long_name':'local pressure freezing point', 'units':'degC'}
                         
         
         # calculate dimensionless coordinate dgrl_=$\tilde{x}$ (28b)
         self.Ea = self.E0*np.sin(self.dp.alpha)
         self.dp['dgrl_'] = self.l3*(self.dp.draft-self.dp.grl_adv)/(self.dp.Ta-self.dp.Tf0)/\
                            (1+self.Ce*(self.Ea/(self.CG+self.ct+self.Ea))**(3/4))
-        self.dp.dgrl_.attrs['long_name'] = 'dimensionless coordinate tilde{x} in limited range [0,1); eqn. (28b)'
+        self.dp.dgrl_.attrs = {'long_name':'dimensionless coordinate tilde{x} in limited range [0,1); eqn. (28b)'}
             
         # reused parameter combinations
         self.f1 = self.bs*self.dp.Sa*self.g/(self.l3*(self.L/self.cp)**3)
@@ -81,28 +79,25 @@ class PlumeModel(ModelConstants):
     def Phi(self):
         """ dimensional cavity circulation, eqn. (29) """
         return self.E0*np.sqrt(self.f1*self.f2*self.f3)*(self.dp.Ta-self.dp.Tf0)**2*self.dp.phi0
-    
 
     def compute_plume(self, full_nondim=False):
         """ combines all output into single xarray dataset """
         def compute_nondimensional(x):
             """ both nondim melt rate and circulation """
             M = self.nondim_M(x)
-            M.attrs['long_name'] = 'dimensionless meltrate; eqn. (26)'
+            M.attrs = {'long_name':'dimensionless meltrate; eqn. (26)'}
             phi0 = self.phi0(x)
-            phi0.attrs['long_name'] = 'dimensionless circulation; eqn. (25)'
+            phi0.attrs = {'long_name':'dimensionless circulation; eqn. (25)'}
             return M, phi0
 
         # calculations
         self.dp['M'], self.dp['phi0'] = compute_nondimensional(self.dp.dgrl_)
 
         self.dp['m']  = self.dim_M()*3600*24*365  # [m/s] -> [m/yr]
-        self.dp.m.attrs['long_name'] = 'dimensional meltrates; eqn. (28a)'
-        self.dp.m.attrs['units'] = '[m/yr]'
+        self.dp.m.attrs = {'long_name':'dimensional meltrates; eqn. (28a)', 'units':'m/yr'}
         
         self.dp['Phi']   = self.Phi()
-        self.dp.Phi.attrs['long_name'] = 'dimensional circulation; eqn. (29)'
-        self.dp.Phi.attrs['units'] = '[m^3/s]'
+        self.dp.Phi.attrs = {'long_name':'dimensional circulation; eqn. (29)', 'units':'m^3/s'}
 
         if full_nondim:   # compute non-dimensional 1D melt curve for full [0,1] interval
             self.dp = self.dp.assign_coords({'x_':np.linspace(0,1,51)})

@@ -2,11 +2,11 @@ import sys
 import numpy as np
 import xarray as xr
 
-from geometry import ModelGeometry, glaciers, path, noPICO, table2
+from real_geometry import RealGeometry, glaciers, path, noPICO, table2
 from constants import ModelConstants
 
 
-class PicoModel(ModelConstants, ModelGeometry):
+class PicoModel(ModelConstants, RealGeometry):
     """ 2D melt model by Reese et al. (2018), doi: 10.5194/tc-12-1969-2018
         melt plume driven by the ice pump circulation
         assumes: small angle
@@ -24,7 +24,7 @@ class PicoModel(ModelConstants, ModelGeometry):
         
         output:  [calling `.compute()`]
         ds  ..  xr.Dataset holding all quantities with their coordinates
-            [from ModelGeometry]
+            [from RealGeometry]
             .  draft .. (float) ocean-ice interface depth in [m]
             .  mask  .. (bool)  ice shelf mask
             .  grl   .. (bool)  grounding line mask
@@ -34,10 +34,10 @@ class PicoModel(ModelConstants, ModelGeometry):
     def __init__(self, name, Ta=None, Sa=None, n=None, ds=None):
         """ initialize model class
         1. load constants from ModelConstant class
-        2. load geometry from ModelGeometry class, or use custom geometry dataset `ds`
+        2. load geometry from RealGeometry class, or use custom geometry dataset `ds`
         3. create arrays holding (intermediate) data
 
-        boxnr 0 rfers to ambient (temperature/salinity) or total (area/melt)
+        boxnr 0 refers to ambient (temperature/salinity) or total (area/melt)
         """
         assert name in glaciers or name=='test'
         assert type(Ta) is float or Ta is None
@@ -45,16 +45,16 @@ class PicoModel(ModelConstants, ModelGeometry):
         assert type(n)==int and n>0 and n<10 or n is None
         ModelConstants.__init__(self)
         self.name = name
-        if n is None:  n = ModelGeometry.find(self.name, 'n')
+        if n is None:  n = RealGeometry.find(self.name, 'n')
         if ds is None:
-            ModelGeometry.__init__(self, name=name, n=n)
+            RealGeometry.__init__(self, name=name, n=n)
             self.ds = self.PICO_geometry()
         else:
             assert name=='test'
             self.ds = ds
-        if Ta is None:  Ta = ModelGeometry.find(self.name, 'Ta')
+        if Ta is None:  Ta = RealGeometry.find(self.name, 'Ta')
         assert Ta>-3 and Ta<10
-        if Sa is None:  Sa = ModelGeometry.find(self.name, 'Sa')
+        if Sa is None:  Sa = RealGeometry.find(self.name, 'Sa')
         assert Sa>0 and Sa<50
         self.n = n
         self.fn_PICO_output = f'{path}/results/PICO/{name}_n{n}_Ta{Ta}_Sa{Sa}.nc'
