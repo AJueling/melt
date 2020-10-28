@@ -36,6 +36,7 @@ glaciers = ['Amery',
             'FilchnerRonne',
            ]
 coarse_resolution = ['Ross', 'FilchnerRonne']
+# total advection time
 T_adv = {'Totten'          : 400,
          'MoscowUniversity': 400,
          'Thwaites'        : 200, 
@@ -49,7 +50,7 @@ noPICO = {'MoscowUniversity': {'n':2, 'Ta':-0.73, 'Sa':34.73},  #  8
 table2 = pd.read_csv(f'{path}/doc/Reese2018/Table2.csv', index_col=0)
 
 
-class ModelGeometry(object):
+class RealGeometry(object):
     """ create geometry files for PICO and PICOP models """
     def __init__(self, name, n=None):
         """
@@ -59,7 +60,7 @@ class ModelGeometry(object):
         """
         assert name in glaciers
         self.name = name
-        if n is None:  self.n = ModelGeometry.find(self.name, 'n')
+        if n is None:  self.n = RealGeometry.find(self.name, 'n')
         else:          self.n = n
         self.fn_PICO = f'{path}/results/PICO/{name}_n{self.n}_geometry.nc'
         self.fn_PICOP = f'{path}/results/PICOP/{name}_n{self.n}_geometry.nc'
@@ -107,6 +108,7 @@ class ModelGeometry(object):
         """  add draft ()=surface-thickness) to self.ds """
         draft = (self.ds.surface-self.ds.thickness).where(self.ds.mask==3)
         draft.name = 'draft'
+        draft.attrs = {'long_name':'depth of ice shelf-ocean interface', 'units':'m'}
         self.ds = xr.merge([self.ds, draft])
         return
 
@@ -134,7 +136,9 @@ class ModelGeometry(object):
             return new
 
         grl  = find_grl_isf('grl')
+        grl.attrs = {'long_name':'grounding line mask'}
         isf  = find_grl_isf('isf')
+        isf.attrs = {'long_name':'ice shelf front mask'}
         # now new `mask`: ice shelf = 1, rest = 0
         mask = xr.where(self.ds['mask']==3, 1, 0)
         self.ds = self.ds.rename({'mask':'mask_orig'})
@@ -223,9 +227,12 @@ class ModelGeometry(object):
         disf  .. min distance to ice shelf front
         rd    .. relative disantce from grounding line
         """
-        self.ds['dgrl'] = ModelGeometry.distance_to_line(self.ds.mask, self.ds.grl)
-        self.ds['disf'] = ModelGeometry.distance_to_line(self.ds.mask, self.ds.isf)
+        self.ds['dgrl'] = RealGeometry.distance_to_line(self.ds.mask, self.ds.grl)
+        self.ds.dgrl.attrs = {'long_name':'minimum distance to grounding line', 'units':'m'}
+        self.ds['disf'] = RealGeometry.distance_to_line(self.ds.mask, self.ds.isf)
+        self.ds.disf.attrs = {'long_name':'minimum distance to ice shelf front', 'units':'m'}
         self.ds['rd'] = self.ds.dgrl/(self.ds.dgrl+self.ds.disf)
+        self.ds.rd.attrs = {'long_name':'dimensionless relative distance'}
         return
 
     def add_latlon(self):
@@ -242,8 +249,10 @@ class ModelGeometry(object):
         output:
         ds.box  .. [int]  mask number field (x,y)
         """
-        self.ds['box'] = xr.DataArray(data=np.zeros(np.shape(self.ds.mask)), name='box',
-                           dims=['y','x'], coords=self.ds.coords)
+        self.ds['box'] = xr.DataArray(data=np.zeros(np.shape(self.ds.mask)),
+                                      name='box',
+                                      dims=['y','x'],
+                                      coords=self.ds.coords)
         for k in np.arange(1,self.n+1):
             lb = self.ds.mask.where(self.ds.rd>=1-np.sqrt((self.n-k+1)/self.n))
             ub = self.ds.mask.where(self.ds.rd<=1-np.sqrt((self.n-k)/self.n))
@@ -264,6 +273,7 @@ class ModelGeometry(object):
             A[k] = self.ds.area.where(self.ds.box==k).sum(['x','y'])  
         # assert A[0]==np.sum(A[1:]), f'{A[0]=} should be{np.sum(A[1:])=}'
         self.ds['area_k'] = xr.DataArray(data=A, dims='boxnr', coords={'boxnr':np.arange(self.n+1)})
+        self.ds.area_k.attrs = {'long_name':'area per box', 'units':'m^2'}
         return
 
     def PICO_geometry(self, new=False):
@@ -344,7 +354,9 @@ class ModelGeometry(object):
         u = regridder(vel.VX)
         v = regridder(vel.VY)
         u.name = 'u'
+        u.attrs = {'long_name':'velocity in x-direction', 'units':'/yr'}
         v.name = 'v'
+        u.attrs = {'long_name':'velocity in y-direction', 'units':'m/yr'}
         self.ds = xr.merge([self.ds, u, v])
         return
 
@@ -362,6 +374,7 @@ class ModelGeometry(object):
         evo = advect_grl(ds=ds, eps=1/50, T=T, plots=False).isel(**kw_isel)
         # evo.to_netcdf(self.fn_evo)
         self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
+        self.ds.attrs = {'long_name':'advected groundling line depth', 'units':'m'}
         return
 
     def calc_angles(self):
@@ -408,11 +421,13 @@ class ModelGeometry(object):
         n2_norm = np.linalg.norm(n2, axis=0)
         del n2
 
-        alpha = np.arccos((-dFdy*n1[0]+dFdx*n1[1])/n1_norm/n2_norm)
-        alpha = abs(alpha-90)
+        alpha = np.arcsin((-dFdy*n1[0]+dFdx*n1[1])/n1_norm/n2_norm)
+        alpha = abs(alpha)
         beta = np.arccos(4*dxdy/n1_norm) # n3 already normalized
         self.ds['alpha'] = alpha
+        self.ds.attrs = {'long_name':'angle along streamlines', 'units':'rad'}
         self.ds['beta']  = beta
+        self.ds.attrs = {'long_name':'largest angle with horizontal', 'units':'rad'}
         return
 
     def PICOP_geometry(self, new=False):
@@ -480,10 +495,10 @@ if __name__=='__main__':
     if len(sys.argv)>2:  # if glacier is named, only calculate geometry for this one
         glacier = sys.argv[2]
         assert glacier in glaciers, f'input {glacier} not recognized, must be in {glaciers}'
-        ModelGeometry(name=glacier).PICO_geometry(new=new)
-        ModelGeometry(name=glacier).PICOP_geometry(new=new)
+        RealGeometry(name=glacier).PICO_geometry(new=new)
+        RealGeometry(name=glacier).PICOP_geometry(new=new)
     else:  # calculate geometry for all glaciers
         for i, glacier in enumerate(glaciers):
             if i in [0,3,7]:  continue
-            ModelGeometry(name=glacier).PICO_geometry(new=new)
-            ModelGeometry(name=glacier).PICOP_geometry(new=new)
+            RealGeometry(name=glacier).PICO_geometry(new=new)
+            RealGeometry(name=glacier).PICOP_geometry(new=new)

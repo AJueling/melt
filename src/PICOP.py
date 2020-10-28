@@ -4,10 +4,10 @@ import pandas as pd
 
 from PICO import PicoModel
 from Plume import PlumeModel
-from geometry import ModelGeometry, path
+from real_geometry import RealGeometry, path
 
 
-class PicoPlumeModel(PicoModel, PlumeModel, ModelGeometry):
+class PicoPlumeModel(PicoModel, PlumeModel, RealGeometry):
     """ PICOP model by Pelle et al. (2019)
         combines PICO model (Reese et al. 2018) and plume model (Lazeroms et al. 2018)
     """
@@ -21,7 +21,7 @@ class PicoPlumeModel(PicoModel, PlumeModel, ModelGeometry):
         PicoModel.__init__(self, name=name)  # also initiates ModelConstants
         if n is None:  n = self.find('n')
         if ds is None:  # load PICOP geometry file
-            ModelGeometry.__init__(self, name=name, n=n)
+            RealGeometry.__init__(self, name=name, n=n)
             self.ds_geometry = self.PICOP_geometry().drop(['mapping', 'spatial_ref'])
         else:
             assert name=='test'
