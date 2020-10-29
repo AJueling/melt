@@ -61,15 +61,15 @@ class SheetModel(ModelConstants):
         
     def drho(self):
         """Linear equation of state. delta rho/rho0"""
-        return self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])
+        return (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])) * self.tmask
     
     def entr(self):
         """Entrainment """   
-        return self.E0*(np.abs(su.im(self.u[1,:,:])*self.dzdx + su.jm(self.v[1,:,:])*self.dzdy))*self.tmask
+        return self.E0*(np.abs(su.im(self.u[1,:,:])*self.dzdx + su.jm(self.v[1,:,:])*self.dzdy)) * self.tmask
 
     def melt(self):
         """Melt"""       
-        return self.cp/self.L*self.CG*(su.im(self.u[1,:,:])**2+su.jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf)*self.tmask
+        return self.cp/self.L*self.CG*(su.im(self.u[1,:,:])**2+su.jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
     
     def rhsD(self):
         """right hand side of d/dt D"""
