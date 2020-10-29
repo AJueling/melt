@@ -165,7 +165,35 @@ def convT(self,var):
     tW =  im(var)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False) * self.tmask
     
     return tN+tS+tE+tW
+
+
+def convu(self):
+    """Convergence for Du"""
+    tN = 0
+    tS = 0
+    tE = self.D[1,:,:].roll(x=-1,roll_coords=False) * ip(self.u[1,:,:])**2 / self.dx * self.tmask.roll(x=-1,roll_coords=False)
+    tW = self.D[1,:,:]*im(self.u[1,:,:])**2/self.dx * self.tmask
     
+    return tN+tS+tE+tW
+
+def convv(self):
+    tN = 0
+    tS = 0
+    tE = 0
+    tW = 0
+    return tN+tS+tE+tW    
+
+def convu_g(self):
+    t1 =  (self.D[1,:,:]*im(self.u[1,:,:])**2 - self.D[1,:,:].roll(x=-1,roll_coords=False)*ip(self.u[1,:,:])**2)/self.dx
+    t2 =  (jm(ip(self.D[1,:,:]))*jm(self.u[1,:,:])*ip(self.v[1,:,:].roll(y=-1,roll_coords=False)) - jp(ip(self.D[1,:,:]))*jp(self.u[1,:,:])*ip(self.v[1,:,:]))/self.dy * self.vmask
+    return t1+t2
+
+def convv_g(self):
+    t1 =  (im(jp(self.D[1,:,:]))*jp(self.u[1,:,:].roll(x=-1,roll_coords=False))*im(self.v[1,:,:]) - jp(ip(self.D[1,:,:]))*jp(self.u[1,:,:])*ip(self.v[1,:,:]))/self.dx * self.umask
+    t2 =  (self.D[1,:,:]*jm(self.v[1,:,:])**2 - self.D[1,:,:].roll(y=-1,roll_coords=False)*jp(self.v[1,:,:])**2)/self.dy * self.vmask
+    return t1+t2    
+
+
 def updatevar(self,var):
     """Rearrange variable arrays at the start of each time step"""
     var[0,:,:] = var[1,:,:]

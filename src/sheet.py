@@ -83,46 +83,46 @@ class SheetModel(ModelConstants):
     def rhsu(self):
         """right hand side of d/dt u"""
         
-        t1 = -self.u[1,:,:] * su.ip((self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt)        
-        t2 =  (self.D[1,:,:]*su.im(self.u[1,:,:])**2 - self.D[1,:,:].roll(x=-1,roll_coords=False)*su.ip(self.u[1,:,:])**2)/self.dx  # * self.tmask.roll(x=-1,roll_coords=False)
-        t3 =  (su.jm(su.ip(self.D[1,:,:]))*su.jm(self.u[1,:,:])*su.ip(self.v[1,:,:].roll(y=-1,roll_coords=False)) - su.jp(su.ip(self.D[1,:,:]))*su.jp(self.u[1,:,:])*su.ip(self.v[1,:,:]))/self.dy * self.vmask # * self.tmask.roll(y=-1,roll_coords=False)
+        t1 = -self.u[1,:,:] * su.ip((self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt)
+        
+        t2 = su.convu_g(self)
 
         #Equations from Hewitt 2020:
-        #t4 =  su.ip(self.drho())*self.g*su.ip(self.D[1,:,:]) * self.dzdx * self.tmask
-        #t5 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(x=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
+        #t3 =  su.ip(self.drho())*self.g*su.ip(self.D[1,:,:]) * self.dzdx * self.tmask
+        #t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(x=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
 
         #Equations from Holland et al 2006:
-        t4 = -self.g*su.ip(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(x=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
-        t5 = .5*self.g*su.ip(self.D[1,:,:])**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
+        t3 = -self.g*su.ip(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(x=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
+        t4 = .5*self.g*su.ip(self.D[1,:,:])**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
         
-        t6 =  su.ip(self.D[1,:,:])*self.f*su.ip(su.jm(self.v[1,:,:]))
-        t7 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
+        t5 =  su.ip(self.D[1,:,:])*self.f*su.ip(su.jm(self.v[1,:,:]))
+        t6 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
         
-        t8 = self.Ah*su.lapu(self,self.u[0,:,:])
+        t7 = self.Ah*su.lapu(self,self.u[0,:,:])
 
-        return (t1+t2+t3+t4+t5+t6+t7+t8)/su.ip(self.D[1,:,:]) * self.umask
+        return (t1+t2+t3+t4+t5+t6+t7)/su.ip(self.D[1,:,:]) * self.umask
 
     def rhsv(self):
         """right hand side of d/dt v"""
 
         t1 = -self.v[1,:,:] * su.jp((self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt) 
-        t2 =  (su.im(su.jp(self.D[1,:,:]))*su.jp(self.u[1,:,:].roll(x=-1,roll_coords=False))*su.im(self.v[1,:,:]) - su.jp(su.ip(self.D[1,:,:]))*su.jp(self.u[1,:,:])*su.ip(self.v[1,:,:]))/self.dx * self.umask # * self.tmask.roll(x=-1,roll_coords=False)
-        t3 =  (self.D[1,:,:]*su.jm(self.v[1,:,:])**2 - self.D[1,:,:].roll(y=-1,roll_coords=False)*su.jp(self.v[1,:,:])**2)/self.dy * self.vmask  # * self.tmask.roll(y=-1,roll_coords=False)
+        
+        t2 = su.convv_g(self)
 
         #Equations from Hewitt 2020:
-        #t4 =  su.jp(self.drho())*self.g*su.jp(self.D[1,:,:]) * self.dzdy * self.tmask
-        #t5 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(y=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
+        #t3 =  su.jp(self.drho())*self.g*su.jp(self.D[1,:,:]) * self.dzdy * self.tmask
+        #t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(y=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
 
         #Equations from Holland et al 2006:
-        t4 = -self.g*su.jp(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(y=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dy * self.tmask# * self.tmask.roll(y=-1,roll_coords=False)
-        t5 = .5*self.g*su.jp(self.D[1,:,:])**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask #* self.tmask.roll(y=-1,roll_coords=False)
+        t3 = -self.g*su.jp(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(y=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dy * self.tmask# * self.tmask.roll(y=-1,roll_coords=False)
+        t4 = .5*self.g*su.jp(self.D[1,:,:])**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask #* self.tmask.roll(y=-1,roll_coords=False)
 
-        t6 = -su.jp(self.D[1,:,:])*self.f*su.jp(su.im(self.u[1,:,:])) 
-        t7 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
+        t5 = -su.jp(self.D[1,:,:])*self.f*su.jp(su.im(self.u[1,:,:])) 
+        t6 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
         
-        t8 = self.Ah*su.lapv(self,self.v[0,:,:])
+        t7 = self.Ah*su.lapv(self,self.v[0,:,:])
             
-        return (t1+t2+t3+t4+t5+t6+t7+t8)/su.jp(self.D[1,:,:]) * self.vmask
+        return (t1+t2+t3+t4+t5+t6+t7)/su.jp(self.D[1,:,:]) * self.vmask
     
     def rhsT(self):
         """right hand side of d/dt T"""
