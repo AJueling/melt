@@ -23,7 +23,7 @@ class IdealGeometry(object):
         self.pdict = pdict
         return
 
-    def test_geometry(self, case, Ta=0, Sa=34):
+    def test_geometry(self, case, Ta=0, Sa=34, n=3):
         """ creates standard test case geometries
         format designed to be compatible with Bedmachine data
         
@@ -40,9 +40,9 @@ class IdealGeometry(object):
 
         assert type(case)==int
 
-        nx, ny = 30,20
+        nx, ny = 30,30
         mask = np.ones((ny,nx))
-        x = np.linspace(0,2e5,nx)
+        x = np.linspace(0,1e5,nx)
         y = np.linspace(0,1e5,ny)
         dx, dy = x[1]-x[0], y[1]-y[0]
         d_x, d_y = np.meshgrid(x, y)
@@ -107,7 +107,7 @@ class IdealGeometry(object):
         ds['grl_adv'] = ('x', np.full_like(draft, draft[0]))
         return ds
 
-    def geometry(self):
+    def create(self):
         """ function to return geometry dataset """
         if self.name=='plumeref':
             N = 101
@@ -119,8 +119,8 @@ class IdealGeometry(object):
         elif self.name[:4]=='test':
             Ta, Sa = 0, 34
             if self.pdict is not None:
-                if 'Ta' in self.pdict:   Ta = pdict['Ta']
-                if 'Sa' in self.pdict:   Sa = pdict['Sa']
+                if 'Ta' in self.pdict:   Ta = self.pdict['Ta']
+                if 'Sa' in self.pdict:   Sa = self.pdict['Sa']
             case = int(self.name[4:])
             ds = self.test_geometry(case=case, Ta=Ta, Sa=Sa)
 
@@ -130,5 +130,5 @@ class IdealGeometry(object):
         ds.Ta.attrs      = {'long_name':'ambient temperature', 'units':'degC'}
         ds.Sa.attrs      = {'long_name':'ambient salinity', 'units':'psu'}
         ds.alpha.attrs   = {'long_name':'local slope angle along stream lines', 'units':'rad'}
-        # ds.grl_adv.attrs = {'long_name':'advected grounding line depth', 'units':'m'}
+        ds.grl_adv.attrs = {'long_name':'advected grounding line depth / plume origin depth', 'units':'m'}
         return ds
