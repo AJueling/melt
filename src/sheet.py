@@ -53,7 +53,7 @@ class SheetModel(ModelConstants):
         #Some input params
         self.diagint = 100    # Timestep at which to print diagnostics
         self.Ddiff = .01      # Factor to reduce diffusion in thickness
-        self.days = 6        # Total runtime in days
+        self.days = 12        # Total runtime in days
         self.maxvel = 3       # Maximum velocity to define time step and diffusivity [m/s]
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]
