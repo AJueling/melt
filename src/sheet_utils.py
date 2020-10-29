@@ -67,8 +67,8 @@ def initialize_vars(self):
     self.S = xr.DataArray(np.zeros((3,self.ny,self.nx)),dims=['n','y','x'],coords={'y':self.y,'x':self.x},name='S')
         
     #Draft dz/dx and dz/dy on t-grid
-    self.dzdx = ((self.zb.roll(x=-1,roll_coords=False)-self.zb.roll(x=1,roll_coords=False))/2/self.dx)
-    self.dzdy = ((self.zb.roll(y=-1,roll_coords=False)-self.zb.roll(y=1,roll_coords=False))/2/self.dy)
+    self.dzdx = ddxT_e(self,self.zb)
+    self.dzdy = ddyT_e(self,self.zb)
     
     #Local freezing point [degC]
     self.Tf = self.l1*self.Sa+self.l2+self.l3*self.zb
@@ -86,6 +86,18 @@ def initialize_vars(self):
     self.S[2,:,:] = self.S[0,:,:] + self.dt * self.rhsS()       
     
     return
+
+def ddxT_e(self,var):
+    """Computes d/dx at tgrid, extrapolating gradients outside valid area. Specific for gradient in draft at boundaries """
+    t1 = (var.roll(x=-1,roll_coords=False) - var)*self.tmask.roll(x=-1,roll_coords=False)
+    t2 = (var - var.roll(x= 1,roll_coords=False))*self.tmask.roll(x= 1,roll_coords=False)
+    return ((t1+t2)/((self.tmask.roll(x=-1,roll_coords=False)+self.tmask.roll(x=1,roll_coords=False))*self.dx)).fillna(0)# * self.tmask
+
+def ddyT_e(self,var):
+    """Computes d/dy at tgrid, extrapolating gradients outside valid area. Specific for gradient in draft at boundaries """
+    t1 = (var.roll(y=-1,roll_coords=False) - var)*self.tmask.roll(y=-1,roll_coords=False)
+    t2 = (var - var.roll(y= 1,roll_coords=False))*self.tmask.roll(y= 1,roll_coords=False)
+    return ((t1+t2)/((self.tmask.roll(y=-1,roll_coords=False)+self.tmask.roll(y=1,roll_coords=False))*self.dy)).fillna(0)# * self.tmask
 
 def im(var):
     """Value at i-1/2 """
@@ -147,16 +159,12 @@ def lapv(self,var):
 
 def convT(self,var):
     """Convergence for D, T, and S"""
-    #tN = -jp(var)*self.v[1,:,:]/self.dy * self.vmask * self.tmask
-    #tS =  jm(var)*self.v[1,:,:].roll(y=1,roll_coords=False)/self.dy * self.vmask.roll(y=1,roll_coords=False) * self.tmask
-    #tE = -ip(var)*self.u[1,:,:]/self.dx * self.umask * self.tmask
-    #tW =  im(var)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False) * self.tmask
+    tN = -jp(var)*self.v[1,:,:]/self.dy * self.vmask * self.tmask
+    tS =  jm(var)*self.v[1,:,:].roll(y=1,roll_coords=False)/self.dy * self.vmask.roll(y=1,roll_coords=False) * self.tmask
+    tE = -ip(var)*self.u[1,:,:]/self.dx * self.umask * self.tmask
+    tW =  im(var)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False) * self.tmask
     
-    t1 = (im(var)*self.u[1,:,:].roll(x=1,roll_coords=False) - ip(var)*self.u[1,:,:])/self.dx * self.umask
-    t2 = (jm(var)*self.v[1,:,:].roll(y=1,roll_coords=False) - jp(var)*self.v[1,:,:])/self.dy * self.vmask
-        
-    return t1+t2
-    #return tN+tS+tE+tW
+    return tN+tS+tE+tW
     
 def updatevar(self,var):
     """Rearrange variable arrays at the start of each time step"""
