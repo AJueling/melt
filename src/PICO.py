@@ -2,8 +2,9 @@ import sys
 import numpy as np
 import xarray as xr
 
-from real_geometry import RealGeometry, glaciers, path, noPICO, table2
 from constants import ModelConstants
+from real_geometry import RealGeometry, glaciers, path, noPICO, table2
+from ideal_geometry import IdealGeometry, cases
 
 
 class PicoModel(ModelConstants, RealGeometry):
@@ -39,50 +40,65 @@ class PicoModel(ModelConstants, RealGeometry):
 
         boxnr 0 refers to ambient (temperature/salinity) or total (area/melt)
         """
-        assert name in glaciers or name=='test'
-        assert type(Ta) is float or Ta is None
-        assert type(Sa) is float or Sa is None
+        assert name in glaciers or name in cases, f'name must be in {cases} or {glaciers}'
+        assert type(Ta) is float or Ta is None, 'Ta is not the right type'
+        assert type(Sa) is float or Sa is None, 'Sa is not the right type'
         assert type(n)==int and n>0 and n<10 or n is None
         ModelConstants.__init__(self)
-        self.name = name
-        if n is None:  n = RealGeometry.find(self.name, 'n')
-        if ds is None:
-            RealGeometry.__init__(self, name=name, n=n)
-            self.ds = self.PICO_geometry()
-        else:
-            assert name=='test'
-            self.ds = ds
-        if Ta is None:  Ta = RealGeometry.find(self.name, 'Ta')
-        assert Ta>-3 and Ta<10
-        if Sa is None:  Sa = RealGeometry.find(self.name, 'Sa')
-        assert Sa>0 and Sa<50
         self.n = n
+        self.name = name
+        Ta, Sa = self.init_geometry(ds, Ta, Sa)
         self.fn_PICO_output = f'{path}/results/PICO/{name}_n{n}_Ta{Ta}_Sa{Sa}.nc'
 
         # hydrostatic pressure at each location(x,y)
-        # assuming constant density
-        self.p = abs(self.ds.draft)*self.rho0*self.g
+        self.p = abs(self.ds.draft)*self.rho0*self.g  # ssuming constant density
         self.p.name = 'pressure'
-        
-        self.nulambda = self.rhoi/self.rhow*self.L/self.cp
+        self.p.attrs = {'long_name':'hydrostatic pressure', 'units':'Pa'}        
+
         # intermediate constants for each box
-        self.g1 = np.zeros((self.n+1))    # A_k*gamma^\star_T
-        self.g2 = np.zeros((self.n+1))    # g1/nu/lambda
-        self.pk = np.zeros((self.n+1))    # average pressure of box k
+        self.nulambda = self.rhoi/self.rhow*self.L/self.cp
+        self.g1 = np.zeros((self.n+1))  # A_k*gamma^\star_T
+        self.g2 = np.zeros((self.n+1))  # g1/nu/lambda
+        self.pk = np.zeros((self.n+1))  # average pressure of box k
         
-        for k in np.arange(1,n+1):
+        for k in np.arange(1,self.n+1):
             self.g1[k] = abs(self.ds.area_k[k])*self.gammae  # defined just above (A6)
             self.g2[k] = self.g1[k]/self.nulambda
             self.pk[k] = self.p.where(self.ds.box==k).mean(['x','y'])
         
         self.M = xr.zeros_like(self.ds.draft)  # melt(x,y)
         self.M.name = 'melt'
-        self.T = np.zeros((self.n+1))          # box avg ambient temp
-        self.S = np.zeros((self.n+1))          # 
-        self.m = np.zeros((self.n+1))
+        self.M.attrs = {'long_name':'dimensional melt', 'units':'m/yr'}
+        self.T = np.zeros((self.n+1))  # box avg ambient temp
+        self.S = np.zeros((self.n+1))  # box avg ambient temp
+        self.m = np.zeros((self.n+1))  # box avg melt rate
         self.T[0] = Ta
         self.S[0] = Sa
         return
+
+    def init_geometry(self, ds, Ta, Sa):
+        """ load appropriate geometry, sets self.ds and self.n """
+        if ds is not None:          # pass custom geometry dataset to model
+            self.ds = ds
+            self.n = self.ds.n
+        else:
+            if self.name in cases:       # idealized geometry
+                if self.n is None:  self.n = 3
+                if Ta is None:  Ta = 0
+                if Sa is None:  Sa = 34
+                pdict = dict(Ta=Ta, Sa=Sa, n=self.n)
+                self.ds = IdealGeometry(name=self.name, pdict=pdict).create()
+            elif self.name in glaciers:  # realistic geometry
+                if self.n is None:  self.n = RealGeometry.find(name, 'n')
+                # RealGeometry.__init__(self, name=name, n=n)  # old syntax, need to try if new one works before deleting
+                # self.ds = self.PICO_geometry()
+                self.ds = RealGeometry(name=name, n=n)
+                if Ta is None:  Ta = RealGeometry.find(self.name, 'Ta')
+                if Sa is None:  Sa = RealGeometry.find(self.name, 'Sa')
+
+        assert Ta>-3 and Ta<10
+        assert Sa>0 and Sa<50
+        return Ta, Sa
 
     def T_s(self, k):
         """ spatially explicit $T^\star(x,y)$ temperature defined just above (A6) """
@@ -141,9 +157,13 @@ class PicoModel(ModelConstants, RealGeometry):
         self.m[0] = self.M.where(self.ds.mask).mean()
         kwargs = {'dims':'boxnr', 'coords':{'boxnr':np.arange(self.n+1)}}
         T = xr.DataArray(data=self.T, name='Tk', **kwargs)
+        T.attrs = {'long_name':'ambient temperature of box k', 'units':'degC'}
         S = xr.DataArray(data=self.S, name='Sk', **kwargs)
+        T.attrs = {'long_name':'ambient salinity of box k', 'units':'psu'}
         m = xr.DataArray(data=self.m, name='mk', **kwargs)
-        q = xr.DataArray(data=self.q, name='q')
+        m.attrs = {'long_name':'average melt of box k', 'units':'m/yr'}
+        q = xr.DataArray(data=self.q/1e6, name='q')
+        m.attrs = {'long_name':'overturning circulation', 'units':'Sv'}
         ds = xr.merge([self.p, self.M, T, S, m, q])
         ds.to_netcdf(self.fn_PICO_output)
         return self.ds, ds  # geometry dataset and PICO output dataset

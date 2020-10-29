@@ -31,61 +31,83 @@ class IdealGeometry(object):
 
         output:  ds (xr.Dataset) contains the following fields
         draft   ..  
-        mask    ..  [0] ocean, [1] grounded ice, [3] ice shelf
+        mask    ..  [0] ocean, [1] grounded ice, [3] ice shelf; like BedMachine dataset
         u/v     ..  
         Ta/Sa   ..  constant, ambient temperature/salinity
         angle   ..  local angle, needed for Plume and PICOP
         grl_adv ..  advected grounding line depth, needed for Plume and PICOP
+        box     ..  box number [1,n] for PICO and PICOP models
+        area_k  ..  area per box
         """
 
         assert type(case)==int
 
         nx, ny = 30,30
-        mask = 3*np.ones((ny,nx))
         x = np.linspace(0,1e5,nx)
         y = np.linspace(0,1e5,ny)
         dx, dy = x[1]-x[0], y[1]-y[0]
         d_x, d_y = np.meshgrid(x, y)
+        area = dx*dy  # area per grid cell
+
+        ds = xr.Dataset({'mask':(['y','x'], 3*np.ones((ny,nx)))}, coords={'x':x, 'y':y})
+        ds.mask[:,0] = 2
+        ds.mask[0,:] = 2
+
+        def define_boxes(dim, n):
+            """ create DataArray with equally spaced integer box numbers [1,n+1] """
+            assert dim in ['x', 'y']
+            if dim=='x': other_dim = 'y'
+            elif dim=='y': other_dim = 'x'
+            da = xr.DataArray(data=np.arange(1,n+1,n/len(ds[dim])).astype(int), dims=dim, coords={dim:ds[dim]})
+            da = da.expand_dims({other_dim:ds[other_dim]})
+            return da
+
+        def area_per_box(n):
+            mask_ = xr.where(ds.mask==3, 1, 0)  # binary mask where floating ice
+            area = dx*dy*mask_
+            A = np.zeros((n+1))
+            A[0] = (mask_*area).sum(['x','y'])
+            for k in np.arange(1,n+1):
+                A[k] = area.where(ds.box==k).sum(['x','y'])  
+            da = xr.DataArray(data=A, dims='boxnr', coords={'boxnr':np.arange(n+1)})
+            da.attrs = {'long_name':'area per box', 'units':'m^2'}
+            return da
 
         if case==1:
-            mask[:,0] = 2
-            mask[-1,:] = 2
-            mask[0,:] = 2
-            mask[:,-1] = 0
             draft, _ = np.meshgrid(np.linspace(-1000,-500,nx), np.ones((ny)))
-            dgrl = d_x
             alpha = np.arctan(np.gradient(draft, axis=1)/dx)
             grl_adv = np.full_like(draft, -1000)
+            box_dim = 'x'
         elif case==2:
-            mask[:,0] = 2
-            mask[0,:] = 2
-            mask[:,-1] = 2
-            mask[-1,:] = 0
             _, draft = np.meshgrid( np.ones((nx)), np.linspace(-1000,-500,ny))
-            dgrl = d_y
             alpha = np.arctan(np.gradient(draft, axis=0)/dy)
             grl_adv = np.full_like(draft, -1000)
+            box_dim = 'y'
         elif case==3:
-            mask[:,0] = 2
-            mask[-1,:] = 2
-            mask[0,:] = 2
-            mask[:,-1] = 0
             xx, yy = np.meshgrid(np.linspace(1,0,nx), np.linspace(0,np.pi,ny))
             curv = 250
             draft = -500-((500-curv)+curv*np.sin(yy)**2)*xx
-            dgrl = d_x
             alpha = np.arctan(np.gradient(draft, axis=1)/dx)
             grl_adv = grl_adv = np.tile(draft[:,0], (nx, 1)).T
+            box_dim = 'x'
+        
+        if box_dim=='x':
+            ds.mask[-1,:] = 2
+            ds.mask[:,-1] = 0
+            dgrl = d_x
+        elif box_dim=='y':
+            ds.mask[:,-1] = 2
+            ds.mask[-1,:] = 0
+            dgrl = d_y
 
-        kwargs = {'dims':['y','x'], 'coords':{'x':x, 'y':y}}
-        da0 = xr.DataArray(data=mask               , name='mask'   , **kwargs)
-        da1 = xr.DataArray(data=draft              , name='draft'  , **kwargs)
-        da2 = xr.DataArray(data=Ta*np.ones((ny,nx)), name='Ta'     , **kwargs)
-        da3 = xr.DataArray(data=Sa*np.ones((ny,nx)), name='Sa'     , **kwargs)
-        da4 = xr.DataArray(data=dgrl               , name='dgrl'   , **kwargs)
-        da5 = xr.DataArray(data=alpha              , name='alpha'  , **kwargs)
-        da6 = xr.DataArray(data=grl_adv            , name='grl_adv', **kwargs)
-        ds = xr.merge([da0, da1, da2, da3, da4, da5, da6])
+        ds['box']     = define_boxes(dim='x', n=n)
+        ds['area_k']  = area_per_box(n=3)
+        ds['draft']   = (['y','x'], draft              )
+        ds['Ta']      = (['y','x'], Ta*np.ones((ny,nx)))
+        ds['Sa']      = (['y','x'], Sa*np.ones((ny,nx)))
+        ds['dgrl']    = (['y','x'], dgrl               )
+        ds['alpha']   = (['y','x'], alpha              )
+        ds['grl_adv'] = (['y','x'], grl_adv            )
         return ds
 
     def plume_1D_geometry(self, x, draft, Ta, Sa):
