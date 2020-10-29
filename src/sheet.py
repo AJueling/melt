@@ -13,14 +13,14 @@ class SheetModel(ModelConstants):
     
         input:
         ds including:
-            x   ..  [m]     x coordinate
-            y   ..  [m]     y coordinate
+            x      ..  [m]     x coordinate
+            y      ..  [m]     y coordinate
 
-            mask ..  [bin]   mask identifying ocean (0), grounded ice (1), ice shelf (3)
+            mask   ..  [bin]   mask identifying ocean (0), grounded ice (2), ice shelf (3)
 
-            zb  ..  [m]     ice shelf draft
-            Ta  ..  [degC]  ambient temperature
-            Sa  ..  [psu]   ambient salinity
+            draft  ..  [m]     ice shelf draft
+            Ta     ..  [degC]  ambient temperature
+            Sa     ..  [psu]   ambient salinity
 
         output:  [calling `.compute()`]
         ds  ..  xarray Dataset holding all quantities with their coordinates
@@ -42,7 +42,7 @@ class SheetModel(ModelConstants):
         self.x    = ds.x
         self.y    = ds.y        
         self.mask = ds.mask
-        self.zb   = ds.zb
+        self.zb   = ds.draft
         self.Ta   = ds.Ta
         self.Sa   = ds.Sa
 
@@ -53,7 +53,7 @@ class SheetModel(ModelConstants):
         #Some input params
         self.diagint = 100    # Timestep at which to print diagnostics
         self.Ddiff = .01      # Factor to reduce diffusion in thickness
-        self.days = 5         # Total runtime in days
+        self.days = 12        # Total runtime in days
         self.maxvel = 3       # Maximum velocity to define time step and diffusivity [m/s]
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]
