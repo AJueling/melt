@@ -147,16 +147,12 @@ def lapv(self,var):
 
 def convT(self,var):
     """Convergence for D, T, and S"""
-    #tN = -jp(var)*self.v[1,:,:]/self.dy * self.vmask * self.tmask
-    #tS =  jm(var)*self.v[1,:,:].roll(y=1,roll_coords=False)/self.dy * self.vmask.roll(y=1,roll_coords=False) * self.tmask
-    #tE = -ip(var)*self.u[1,:,:]/self.dx * self.umask * self.tmask
-    #tW =  im(var)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False) * self.tmask
+    tN = -jp(var)*self.v[1,:,:]/self.dy * self.vmask * self.tmask
+    tS =  jm(var)*self.v[1,:,:].roll(y=1,roll_coords=False)/self.dy * self.vmask.roll(y=1,roll_coords=False) * self.tmask
+    tE = -ip(var)*self.u[1,:,:]/self.dx * self.umask * self.tmask
+    tW =  im(var)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False) * self.tmask
     
-    t1 = (im(var)*self.u[1,:,:].roll(x=1,roll_coords=False) - ip(var)*self.u[1,:,:])/self.dx * self.umask
-    t2 = (jm(var)*self.v[1,:,:].roll(y=1,roll_coords=False) - jp(var)*self.v[1,:,:])/self.dy * self.vmask
-        
-    return t1+t2
-    #return tN+tS+tE+tW
+    return tN+tS+tE+tW
     
 def updatevar(self,var):
     """Rearrange variable arrays at the start of each time step"""
