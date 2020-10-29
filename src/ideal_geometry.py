@@ -31,7 +31,7 @@ class IdealGeometry(object):
 
         output:  ds (xr.Dataset) contains the following fields
         draft   ..  
-        mask    ..  [0] grounding line, [1] ice shelf, [2] ice shelf front
+        mask    ..  [0] ocean, [1] grounded ice, [3] ice shelf
         u/v     ..  
         Ta/Sa   ..  constant, ambient temperature/salinity
         angle   ..  local angle, needed for Plume and PICOP
@@ -41,35 +41,35 @@ class IdealGeometry(object):
         assert type(case)==int
 
         nx, ny = 30,30
-        mask = np.ones((ny,nx))
+        mask = 3*np.ones((ny,nx))
         x = np.linspace(0,1e5,nx)
         y = np.linspace(0,1e5,ny)
         dx, dy = x[1]-x[0], y[1]-y[0]
         d_x, d_y = np.meshgrid(x, y)
 
         if case==1:
-            mask[:,0] = 0
-            mask[-1,:] = 0
-            mask[0,:] = 0
-            mask[:,-1] = 2
+            mask[:,0] = 2
+            mask[-1,:] = 2
+            mask[0,:] = 2
+            mask[:,-1] = 0
             draft, _ = np.meshgrid(np.linspace(-1000,-500,nx), np.ones((ny)))
             dgrl = d_x
             alpha = np.arctan(np.gradient(draft, axis=1)/dx)
             grl_adv = np.full_like(draft, -1000)
         elif case==2:
-            mask[:,0] = 0
-            mask[0,:] = 0
-            mask[:,-1] = 0
-            mask[-1,:] = 2
+            mask[:,0] = 2
+            mask[0,:] = 2
+            mask[:,-1] = 2
+            mask[-1,:] = 0
             _, draft = np.meshgrid( np.ones((nx)), np.linspace(-1000,-500,ny))
             dgrl = d_y
             alpha = np.arctan(np.gradient(draft, axis=0)/dy)
             grl_adv = np.full_like(draft, -1000)
         elif case==3:
-            mask[:,0] = 0
-            mask[-1,:] = 0
-            mask[0,:] = 0
-            mask[:,-1] = 2
+            mask[:,0] = 2
+            mask[-1,:] = 2
+            mask[0,:] = 2
+            mask[:,-1] = 0
             xx, yy = np.meshgrid(np.linspace(1,0,nx), np.linspace(0,np.pi,ny))
             curv = 250
             draft = -500-((500-curv)+curv*np.sin(yy)**2)*xx
