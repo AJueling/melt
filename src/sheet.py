@@ -61,7 +61,7 @@ class SheetModel(ModelConstants):
         
     def drho(self):
         """Linear equation of state. delta rho/rho0"""
-        return (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])) * self.tmask
+        return (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:]))
     
     def entr(self):
         """Entrainment """   
