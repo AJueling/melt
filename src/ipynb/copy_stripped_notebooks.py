@@ -13,8 +13,11 @@ assert os.path.exists(destination)
 # copying stripped .ipynb files
 files = ['Advection',
          'Bedmachine',
+         'Geometry',
+         'MIP',
          'Plume',
          'PICO',
+         'PICOP',
         ]
 
 for x in files:

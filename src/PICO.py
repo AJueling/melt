@@ -157,16 +157,16 @@ class PicoModel(ModelConstants, RealGeometry):
         self.m[0] = self.M.where(self.ds.mask).mean()
         kwargs = {'dims':'boxnr', 'coords':{'boxnr':np.arange(self.n+1)}}
         T = xr.DataArray(data=self.T, name='Tk', **kwargs)
-        T.attrs = {'long_name':'ambient temperature of box k', 'units':'degC'}
         S = xr.DataArray(data=self.S, name='Sk', **kwargs)
-        T.attrs = {'long_name':'ambient salinity of box k', 'units':'psu'}
         m = xr.DataArray(data=self.m, name='mk', **kwargs)
-        m.attrs = {'long_name':'average melt of box k', 'units':'m/yr'}
         q = xr.DataArray(data=self.q/1e6, name='q')
+        T.attrs = {'long_name':'ambient temperature of box k', 'units':'degC'}
+        T.attrs = {'long_name':'ambient salinity of box k', 'units':'psu'}
+        m.attrs = {'long_name':'average melt of box k', 'units':'m/yr'}
         m.attrs = {'long_name':'overturning circulation', 'units':'Sv'}
         ds = xr.merge([self.p, self.M, T, S, m, q])
         ds.to_netcdf(self.fn_PICO_output)
-        return self.ds, ds  # geometry dataset and PICO output dataset
+        return self.ds, ds  # geometry dataset, PICO output dataset
 
 
 if __name__=='__main__':

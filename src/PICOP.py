@@ -52,7 +52,7 @@ class PicoPlumeModel(PicoModel, PlumeModel, RealGeometry):
         """ """
         return self.ds
 
-    def compute(self):
+    def compute_picop(self):
         """ compute melt rates of the PICOP model """
         # PICO model provides box temperature and salinity
         self.ds_geo, self.ds_PICO = self.compute_pico()
