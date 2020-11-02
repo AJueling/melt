@@ -184,18 +184,34 @@ def convT(self,var):
 
 def convu(self):
     """Convergence for Du"""
-    tN = -jp(ip(self.D[1,:,:]))                       *jp(self.u[1,:,:]) *ip(self.v[1,:,:])                             /self.dy                                           #* self.umask.roll(y=-1,roll_coords=False)
-    tS =  ip(jm(self.D[1,:,:]))                       *jm(self.u[1,:,:]) *ip(self.v[1,:,:].roll(y=1,roll_coords=False)) /self.dy                                           #* self.umask.roll(y= 1,roll_coords=False)
-    tE = -self.D[1,:,:].roll(x=-1,roll_coords=False)  *ip(self.u[1,:,:])**2                                             /self.dx * self.tmask.roll(x=-1,roll_coords=False) #* self.umask.roll(x=-1,roll_coords=False)
-    tW =  self.D[1,:,:]                               *im(self.u[1,:,:])**2                                             /self.dx * self.tmask                              #* self.umask.roll(x= 1,roll_coords=False)
+    DD = self.D[1,:,:]*self.tmask
+    mm = self.tmask
+    #Get D at north and south points (average of 4 values, weighted by mask, so assuming zero gradient across boundaries)
+    DN = ((DD + DD.roll(x=-1,roll_coords=False) + DD.roll(y=-1,roll_coords=False) + DD.roll(x=-1,roll_coords=False).roll(y=-1,roll_coords=False))\
+          /(mm + mm.roll(x=-1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x=-1,roll_coords=False).roll(y=-1,roll_coords=False))).fillna(0)
+    DS = ((DD + DD.roll(x=-1,roll_coords=False) + DD.roll(y= 1,roll_coords=False) + DD.roll(x=-1,roll_coords=False).roll(y= 1,roll_coords=False))\
+          /(mm + mm.roll(x=-1,roll_coords=False) + mm.roll(y= 1,roll_coords=False) + mm.roll(x=-1,roll_coords=False).roll(y= 1,roll_coords=False))).fillna(0)
+    
+    tN = -DN                              *jp_(self.u[1,:,:],self.umask) *ip(self.v[1,:,:])                             /self.dy #* self.umask.roll(y=-1,roll_coords=False)
+    tS =  DS                              *jm_(self.u[1,:,:],self.umask) *ip(self.v[1,:,:]).roll(y=1,roll_coords=False) /self.dy #* self.umask.roll(y= 1,roll_coords=False)
+    tE = -DD.roll(x=-1,roll_coords=False) *ip_(self.u[1,:,:],self.umask) *ip(self.u[1,:,:])                             /self.dx #* self.umask.roll(x=-1,roll_coords=False)
+    tW =  DD                              *im_(self.u[1,:,:],self.umask) *im(self.u[1,:,:])                             /self.dx #* self.umask.roll(x= 1,roll_coords=False)
     return (tN+tS+tE+tW) * self.umask
 
 def convv(self):
     """Covnergence for Dv"""
-    tN = -self.D[1,:,:].roll(y=-1,roll_coords=False)  *jp(self.v[1,:,:])**2                                             /self.dy * self.tmask.roll(y=-1,roll_coords=False) #* self.vmask.roll(y=-1,roll_coords=False)
-    tS =  self.D[1,:,:]                               *jm(self.v[1,:,:])**2                                             /self.dy * self.tmask                              #* self.vmask.roll(y= 1,roll_coords=False)
-    tE = -ip(jp(self.D[1,:,:]))                       *ip(self.v[1,:,:]) *jp(self.u[1,:,:])                             /self.dx                                           #* self.vmask.roll(x=-1,roll_coords=False)
-    tW =  jp(im(self.D[1,:,:]))                       *im(self.v[1,:,:]) *jp(self.u[1,:,:].roll(x=1,roll_coords=False)) /self.dx                                           #* self.vmask.roll(x= 1,roll_coords=False)
+    DD = self.D[1,:,:]*self.tmask
+    mm = self.tmask
+    #Similar D at east and west points
+    DE = ((DD + DD.roll(x=-1,roll_coords=False) + DD.roll(y=-1,roll_coords=False) + DD.roll(x=-1,roll_coords=False).roll(y=-1,roll_coords=False))\
+          /(mm + mm.roll(x=-1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x=-1,roll_coords=False).roll(y=-1,roll_coords=False))).fillna(0)
+    DW = ((DD + DD.roll(x= 1,roll_coords=False) + DD.roll(y=-1,roll_coords=False) + DD.roll(x= 1,roll_coords=False).roll(y= 1,roll_coords=False))\
+          /(mm + mm.roll(x= 1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x= 1,roll_coords=False).roll(y=-1,roll_coords=False))).fillna(0)
+    
+    tN = -DD.roll(y=-1,roll_coords=False)  *jp_(self.v[1,:,:],self.vmask) *jp(self.v[1,:,:])                             /self.dy #* self.vmask.roll(y=-1,roll_coords=False)
+    tS =  DD                               *jm_(self.v[1,:,:],self.vmask) *jm(self.v[1,:,:])                             /self.dy #* self.vmask.roll(y= 1,roll_coords=False)
+    tE = -DE                               *ip_(self.v[1,:,:],self.vmask) *jp(self.u[1,:,:])                             /self.dx #* self.vmask.roll(x=-1,roll_coords=False)
+    tW =  DW                               *im_(self.v[1,:,:],self.vmask) *jp(self.u[1,:,:]).roll(x=1,roll_coords=False) /self.dx #* self.vmask.roll(x= 1,roll_coords=False)
     return (tN+tS+tE+tW) * self.vmask     
 
 def updatevar(self,var):

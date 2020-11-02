@@ -94,6 +94,12 @@ class SheetModel(ModelConstants):
         #t3 = -self.g*su.ip(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(x=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
         #t4 = .5*self.g*su.ip(self.D[1,:,:])**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
         
+        #vv = self.v[1,:,:]*self.vmask
+        #mm = self.vmask
+        #vc = ((vv + vv.roll(y=1,roll_coords=False) + vv.roll(x=-1,roll_coords=False) + vv.roll(y=1,roll_coords=False).roll(x=1,roll_coords=False))\
+        #  /(mm + mm.roll(y=1,roll_coords=False) + mm.roll(x=-1,roll_coords=False) + mm.roll(y=1,roll_coords=False).roll(x=1,roll_coords=False))).fillna(0)
+        #t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*vc
+        
         t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*su.ip(su.jm(self.v[1,:,:]))
         t6 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
         
@@ -116,6 +122,12 @@ class SheetModel(ModelConstants):
         #t3 = -self.g*su.jp(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(y=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dy * self.tmask# * self.tmask.roll(y=-1,roll_coords=False)
         #t4 = .5*self.g*su.jp(self.D[1,:,:])**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask #* self.tmask.roll(y=-1,roll_coords=False)
 
+        #uu = self.u[1,:,:]*self.umask
+        #mm = self.umask
+        #uc = ((uu + uu.roll(x=1,roll_coords=False) + uu.roll(y=-1,roll_coords=False) + uu.roll(x=1,roll_coords=False).roll(y=1,roll_coords=False))\
+        #  /(mm + mm.roll(x=1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x=1,roll_coords=False).roll(y=1,roll_coords=False))).fillna(0)
+        #t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*uc
+        
         t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*su.jp(su.im(self.u[1,:,:])) 
         t6 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
         
@@ -225,6 +237,8 @@ class SheetModel(ModelConstants):
         print('-----------------------------')
         print(f'Run completed, final values:')
         self.printdiags()
+        
+        #Output
         melt = xr.DataArray(self.melt(),dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
         entr = xr.DataArray(self.entr(),dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
         
