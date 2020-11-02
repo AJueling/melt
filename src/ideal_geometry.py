@@ -7,6 +7,8 @@ cases = ['plumeref',  # reference 1D case for Plume model
          'test1',     # constant slope, constant u, v=0
          'test2',     # same as test 1 but in y direction
          'test3',     # sinusoidal grounding line
+         'test4',     # reverse of test 1
+         'test5',     # reverse of test 2
          ]
 
 
@@ -68,7 +70,7 @@ class IdealGeometry(object):
         elif case==3:
             mask[:,0] = 2
             mask[-1,:] = 2
-            mask[0,:] = 2
+            mask[0:] = 2
             mask[:,-1] = 0
             xx, yy = np.meshgrid(np.linspace(1,0,nx), np.linspace(0,np.pi,ny))
             curv = 250
@@ -76,6 +78,25 @@ class IdealGeometry(object):
             dgrl = d_x
             alpha = np.arctan(np.gradient(draft, axis=1)/dx)
             grl_adv = grl_adv = np.tile(draft[:,0], (nx, 1)).T
+        elif case==4:
+            mask[-1,:] = 2
+            mask[0,:] = 2
+            mask[:,-1] = 2
+            mask[:,0] = 0
+            draft, _ = np.meshgrid(np.linspace(-500,-1000,nx), np.ones((ny)))
+            dgrl = d_x
+            alpha = np.arctan(np.gradient(draft, axis=1)/dx)
+            grl_adv = np.full_like(draft, -1000)            
+        elif case==5:
+            mask[:,0] = 2
+            mask[:,-1] = 2
+            mask[-1,:] = 2
+            mask[0,:] = 0
+            _, draft = np.meshgrid( np.ones((nx)), np.linspace(-500,-1000,ny))
+            dgrl = d_y
+            alpha = np.arctan(np.gradient(draft, axis=0)/dy)
+            grl_adv = np.full_like(draft, -1000)            
+    
 
         kwargs = {'dims':['y','x'], 'coords':{'x':x, 'y':y}}
         da0 = xr.DataArray(data=mask               , name='mask'   , **kwargs)
