@@ -53,7 +53,6 @@ def create_grid(self):
     if (len(self.y)==3 or len(self.x)==3):
         print('1D run, using free slip')
         self.slip = 0                                                # Assure free-slip is used in 1D simulation
-        self.nfs  = 1
     
     print(f'Ah: {self.Ah:.0f} m2/s  | dt: {self.dt:.0f} sec | nt: {self.nt} steps')
     return
@@ -65,7 +64,7 @@ def initialize_vars(self):
     self.D = xr.DataArray(np.zeros((3,self.ny,self.nx)),dims=['n','y','x'],coords={'y':self.y,'x':self.x},name='D')
     self.T = xr.DataArray(np.zeros((3,self.ny,self.nx)),dims=['n','y','x'],coords={'y':self.y,'x':self.x},name='T')
     self.S = xr.DataArray(np.zeros((3,self.ny,self.nx)),dims=['n','y','x'],coords={'y':self.y,'x':self.x},name='S')
-        
+
     #Draft dz/dx and dz/dy on t-grid
     self.dzdx = ddxT_e(self,self.zb)
     self.dzdy = ddyT_e(self,self.zb)
@@ -115,8 +114,26 @@ def jp(var):
     """Value at j+1/2"""
     return .5*(var+var.roll(y=-1,roll_coords=False))
 
-def lap(self,var):
+def im_(var,mask):
+    """Value at i-1/2, no gradient across boundary"""
+    return ((var*mask + (var*mask).roll(x= 1,roll_coords=False))/(mask+mask.roll(x= 1,roll_coords=False))).fillna(0)
+
+def ip_(var,mask):
+    """Value at i+1/2, no gradient across boundary"""
+    return ((var*mask + (var*mask).roll(x=-1,roll_coords=False))/(mask+mask.roll(x=-1,roll_coords=False))).fillna(0)
+
+def jm_(var,mask):
+    """Value at j-1/2, no gradient across boundary"""
+    return ((var*mask + (var*mask).roll(y= 1,roll_coords=False))/(mask+mask.roll(y= 1,roll_coords=False))).fillna(0)
+
+def jp_(var,mask):
+    """Value at j+1/2, no gradient across boundary"""
+    return ((var*mask + (var*mask).roll(y=-1,roll_coords=False))/(mask+mask.roll(y=-1,roll_coords=False))).fillna(0)
+
+def lap(self):
     """Laplacian operator for D"""
+    var = self.D[0,:,:]
+    
     tN = (var.roll(y=-1,roll_coords=False)-var)*self.tmask.roll(y=-1,roll_coords=False)/self.dy**2
     tS = (var.roll(y= 1,roll_coords=False)-var)*self.tmask.roll(y= 1,roll_coords=False)/self.dy**2
     tE = (var.roll(x=-1,roll_coords=False)-var)*self.tmask.roll(x=-1,roll_coords=False)/self.dx**2
@@ -128,71 +145,58 @@ def lapT(self,var):
     """Laplacian operator for DT and DS"""
     Dcent = self.D[0,:,:]
     
-    tN = jp(Dcent)*(var.roll(y=-1,roll_coords=False)-var)*self.tmask.roll(y=-1,roll_coords=False)/self.dy**2
-    tS = jm(Dcent)*(var.roll(y= 1,roll_coords=False)-var)*self.tmask.roll(y= 1,roll_coords=False)/self.dy**2
-    tE = ip(Dcent)*(var.roll(x=-1,roll_coords=False)-var)*self.tmask.roll(x=-1,roll_coords=False)/self.dx**2
-    tW = im(Dcent)*(var.roll(x= 1,roll_coords=False)-var)*self.tmask.roll(x= 1,roll_coords=False)/self.dx**2    
+    tN = jp_(Dcent,self.tmask)*(var.roll(y=-1,roll_coords=False)-var)*self.tmask.roll(y=-1,roll_coords=False)/self.dy**2
+    tS = jm_(Dcent,self.tmask)*(var.roll(y= 1,roll_coords=False)-var)*self.tmask.roll(y= 1,roll_coords=False)/self.dy**2
+    tE = ip_(Dcent,self.tmask)*(var.roll(x=-1,roll_coords=False)-var)*self.tmask.roll(x=-1,roll_coords=False)/self.dx**2
+    tW = im_(Dcent,self.tmask)*(var.roll(x= 1,roll_coords=False)-var)*self.tmask.roll(x= 1,roll_coords=False)/self.dx**2    
     
     return tN+tS+tE+tW
 
-def lapu(self,var):
+def lapu(self):
     """Laplacian operator for Du"""
-    Dcent = ip(self.D[0,:,:])
+    Dcent = ip_(self.D[0,:,:],self.tmask)
+    var = self.u[0,:,:]
     
-    tN = jp(Dcent)*(var.roll(y=-1,roll_coords=False)-var)*self.tmask.roll(y=-1,roll_coords=False)/self.dy**2 - self.slip*Dcent*var*ip(self.grd.roll(y=-1,roll_coords=False))/self.dy**2
-    tS = jm(Dcent)*(var.roll(y= 1,roll_coords=False)-var)*self.tmask.roll(y= 1,roll_coords=False)/self.dy**2 - self.slip*Dcent*var*ip(self.grd.roll(y= 1,roll_coords=False))/self.dy**2  
-    tE = self.D[0,:,:].roll(x=-1,roll_coords=False)*(var.roll(x=-1,roll_coords=False)-var)*self.tmask.roll(x=-1,roll_coords=False)/self.dx**2
-    tW = self.D[0,:,:]*(var.roll(x= 1,roll_coords=False)-var)*self.tmask.roll(x= 1,roll_coords=False)/self.dx**2  
-    
-    return tN+tS+tE+tW
+    tN = jp_(Dcent,self.tmask)*(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y=-1,roll_coords=False))/self.dy**2
+    tS = jm_(Dcent,self.tmask)*(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y= 1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y= 1,roll_coords=False))/self.dy**2  
+    tE = self.D[0,:,:].roll(x=-1,roll_coords=False)   *(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False)
+    tW = self.D[0,:,:]                                *(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn)
+    return (tN+tS+tE+tW) * self.umask
 
-def lapv(self,var):
+def lapv(self):
     """Laplacian operator for Dv"""
-    Dcent = jp(self.D[0,:,:])
+    Dcent = jp_(self.D[0,:,:],self.tmask)
+    var = self.v[0,:,:]
     
-    tN = self.D[0,:,:].roll(y=-1,roll_coords=False)*(var.roll(y=-1,roll_coords=False)-var)*self.tmask.roll(y=-1,roll_coords=False)/self.dy**2 
-    tS = self.D[0,:,:]*(var.roll(y= 1,roll_coords=False)-var)*self.tmask.roll(y= 1,roll_coords=False)/self.dy**2
-    tE = ip(Dcent)*(var.roll(x=-1,roll_coords=False)-var)*self.tmask.roll(x=-1,roll_coords=False)/self.dx**2 - self.slip*Dcent*var*jp(self.grd.roll(x=-1,roll_coords=False))/self.dx**2
-    tW = im(Dcent)*(var.roll(x= 1,roll_coords=False)-var)*self.tmask.roll(x= 1,roll_coords=False)/self.dx**2 - self.slip*Dcent*var*jp(self.grd.roll(x= 1,roll_coords=False))/self.dx**2  
-    
-    return tN+tS+tE+tW
+    tN = self.D[0,:,:].roll(y=-1,roll_coords=False)   *(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) 
+    tS = self.D[0,:,:]                                *(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn)
+    tE = ip_(Dcent,self.tmask)*(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x=-1,roll_coords=False))/self.dx**2
+    tW = im_(Dcent,self.tmask)*(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x= 1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x= 1,roll_coords=False))/self.dx**2  
+    return (tN+tS+tE+tW) * self.vmask
 
 def convT(self,var):
     """Convergence for D, T, and S"""
-    tN = -jp(var)*self.v[1,:,:]/self.dy * self.vmask * self.tmask
-    tS =  jm(var)*self.v[1,:,:].roll(y=1,roll_coords=False)/self.dy * self.vmask.roll(y=1,roll_coords=False) * self.tmask
-    tE = -ip(var)*self.u[1,:,:]/self.dx * self.umask * self.tmask
-    tW =  im(var)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False) * self.tmask
-    
-    return tN+tS+tE+tW
-
+    tN = -jp_(var,self.tmask)*self.v[1,:,:]                            /self.dy * self.vmask                             
+    tS =  jm_(var,self.tmask)*self.v[1,:,:].roll(y=1,roll_coords=False)/self.dy * self.vmask.roll(y=1,roll_coords=False) 
+    tE = -ip_(var,self.tmask)*self.u[1,:,:]                            /self.dx * self.umask                             
+    tW =  im_(var,self.tmask)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False)
+    return (tN+tS+tE+tW) * self.tmask
 
 def convu(self):
     """Convergence for Du"""
-    tN = 0
-    tS = 0
-    tE = self.D[1,:,:].roll(x=-1,roll_coords=False) * ip(self.u[1,:,:])**2 / self.dx * self.tmask.roll(x=-1,roll_coords=False)
-    tW = self.D[1,:,:]*im(self.u[1,:,:])**2/self.dx * self.tmask
-    
-    return tN+tS+tE+tW
+    tN = -jp(ip(self.D[1,:,:]))                       *jp(self.u[1,:,:]) *ip(self.v[1,:,:])                             /self.dy                                           #* self.umask.roll(y=-1,roll_coords=False)
+    tS =  ip(jm(self.D[1,:,:]))                       *jm(self.u[1,:,:]) *ip(self.v[1,:,:].roll(y=1,roll_coords=False)) /self.dy                                           #* self.umask.roll(y= 1,roll_coords=False)
+    tE = -self.D[1,:,:].roll(x=-1,roll_coords=False)  *ip(self.u[1,:,:])**2                                             /self.dx * self.tmask.roll(x=-1,roll_coords=False) #* self.umask.roll(x=-1,roll_coords=False)
+    tW =  self.D[1,:,:]                               *im(self.u[1,:,:])**2                                             /self.dx * self.tmask                              #* self.umask.roll(x= 1,roll_coords=False)
+    return (tN+tS+tE+tW) * self.umask
 
 def convv(self):
-    tN = 0
-    tS = 0
-    tE = 0
-    tW = 0
-    return tN+tS+tE+tW    
-
-def convu_g(self):
-    t1 =  (self.D[1,:,:]*im(self.u[1,:,:])**2 - self.D[1,:,:].roll(x=-1,roll_coords=False)*ip(self.u[1,:,:])**2)/self.dx
-    t2 =  (jm(ip(self.D[1,:,:]))*jm(self.u[1,:,:])*ip(self.v[1,:,:].roll(y=-1,roll_coords=False)) - jp(ip(self.D[1,:,:]))*jp(self.u[1,:,:])*ip(self.v[1,:,:]))/self.dy * self.vmask
-    return t1+t2
-
-def convv_g(self):
-    t1 =  (im(jp(self.D[1,:,:]))*jp(self.u[1,:,:].roll(x=-1,roll_coords=False))*im(self.v[1,:,:]) - jp(ip(self.D[1,:,:]))*jp(self.u[1,:,:])*ip(self.v[1,:,:]))/self.dx * self.umask
-    t2 =  (self.D[1,:,:]*jm(self.v[1,:,:])**2 - self.D[1,:,:].roll(y=-1,roll_coords=False)*jp(self.v[1,:,:])**2)/self.dy * self.vmask
-    return t1+t2    
-
+    """Covnergence for Dv"""
+    tN = -self.D[1,:,:].roll(y=-1,roll_coords=False)  *jp(self.v[1,:,:])**2                                             /self.dy * self.tmask.roll(y=-1,roll_coords=False) #* self.vmask.roll(y=-1,roll_coords=False)
+    tS =  self.D[1,:,:]                               *jm(self.v[1,:,:])**2                                             /self.dy * self.tmask                              #* self.vmask.roll(y= 1,roll_coords=False)
+    tE = -ip(jp(self.D[1,:,:]))                       *ip(self.v[1,:,:]) *jp(self.u[1,:,:])                             /self.dx                                           #* self.vmask.roll(x=-1,roll_coords=False)
+    tW =  jp(im(self.D[1,:,:]))                       *im(self.v[1,:,:]) *jp(self.u[1,:,:].roll(x=1,roll_coords=False)) /self.dx                                           #* self.vmask.roll(x= 1,roll_coords=False)
+    return (tN+tS+tE+tW) * self.vmask     
 
 def updatevar(self,var):
     """Rearrange variable arrays at the start of each time step"""
@@ -200,53 +204,6 @@ def updatevar(self,var):
     var[1,:,:] = var[2,:,:]
     var[2,:,:] *= 0
     return
-
-def boundaries(self):          
-    """Update ghost values at boundaries to ensure zero derivatives"""
-    
-    self.D[1,:,:] = self.tmask*self.D[1,:,:] \
-        +((  (self.grlN+self.isfN)*self.D[1,:,:].roll(y= 1,roll_coords=False) \
-         +   (self.grlS+self.isfS)*self.D[1,:,:].roll(y=-1,roll_coords=False) \
-         +   (self.grlE+self.isfE)*self.D[1,:,:].roll(x= 1,roll_coords=False) \
-         +   (self.grlW+self.isfW)*self.D[1,:,:].roll(x=-1,roll_coords=False)) / \
-        (self.grl+self.isf)).fillna(0)
-    
-    self.D[1,:,:] = xr.where(self.D[1,:,:]<self.minD,self.minD,self.D[1,:,:])
-    
-    self.T[1,:,:] = self.tmask*self.T[1,:,:] \
-        +((  (self.grlN+self.isfN)*self.T[1,:,:].roll(y= 1,roll_coords=False) \
-         +   (self.grlS+self.isfS)*self.T[1,:,:].roll(y=-1,roll_coords=False) \
-         +   (self.grlE+self.isfE)*self.T[1,:,:].roll(x= 1,roll_coords=False) \
-         +   (self.grlW+self.isfW)*self.T[1,:,:].roll(x=-1,roll_coords=False)) / \
-        (self.grl+self.isf)).fillna(0)
-    self.S[1,:,:] = self.tmask*self.S[1,:,:] \
-        +((  (self.grlN+self.isfN)*self.S[1,:,:].roll(y= 1,roll_coords=False) \
-         +   (self.grlS+self.isfS)*self.S[1,:,:].roll(y=-1,roll_coords=False) \
-         +   (self.grlE+self.isfE)*self.S[1,:,:].roll(x= 1,roll_coords=False) \
-         +   (self.grlW+self.isfW)*self.S[1,:,:].roll(x=-1,roll_coords=False)) / \
-        (self.grl+self.isf)).fillna(0)
-    
-    self.u[1,:,:] *= self.umask
-    self.v[1,:,:] *= self.vmask
-    
-    self.u[1,:,:] = xr.where(self.grlN,self.nfs*self.u[1,:,:].roll(y= 1,roll_coords=False),self.u[1,:,:])
-    self.u[1,:,:] = xr.where(self.grlS,self.nfs*self.u[1,:,:].roll(y=-1,roll_coords=False),self.u[1,:,:])    
-    
-    self.v[1,:,:] = xr.where(self.grlE,self.nfs*self.v[1,:,:].roll(x= 1,roll_coords=False),self.v[1,:,:])
-    self.v[1,:,:] = xr.where(self.grlW,self.nfs*self.v[1,:,:].roll(x=-1,roll_coords=False),self.v[1,:,:])
-    
-    self.u[1,:,:] = xr.where(self.isfN,self.u[1,:,:].roll(y= 1,roll_coords=False),self.u[1,:,:])
-    self.u[1,:,:] = xr.where(self.isfS,self.u[1,:,:].roll(y=-1,roll_coords=False),self.u[1,:,:])        
-    self.u[1,:,:] = xr.where(self.isfE,self.u[1,:,:].roll(x= 1,roll_coords=False),self.u[1,:,:])
-    self.u[1,:,:] = xr.where(self.isfW,self.u[1,:,:].roll(x=-1,roll_coords=False),self.u[1,:,:])
-    
-    self.v[1,:,:] = xr.where(self.isfN,self.v[1,:,:].roll(y= 1,roll_coords=False),self.v[1,:,:])
-    self.v[1,:,:] = xr.where(self.isfS,self.v[1,:,:].roll(y=-1,roll_coords=False),self.v[1,:,:])         
-    self.v[1,:,:] = xr.where(self.isfE,self.v[1,:,:].roll(x= 1,roll_coords=False),self.v[1,:,:])
-    self.v[1,:,:] = xr.where(self.isfW,self.v[1,:,:].roll(x=-1,roll_coords=False),self.v[1,:,:]) 
-        
-    return
-
 
 """Functions for plotting below"""
 
@@ -293,40 +250,3 @@ def plotpanels(self):
 
     plt.tight_layout()
     plt.show()
-    
-    
-"""Old and unused functions below"""
-    
-def lapT_g(self,var):
-    """Laplacian operator for DT and DS based on ghost values"""
-    Dcent = self.D[0,:,:]
-    
-    t1 = Dcent*(var.roll(x=-1,roll_coords=False)+var.roll(x=1,roll_coords=False)-2*var)/self.dx**2
-    t2 = (ip(var)-im(var))*(ip(Dcent)-im(Dcent))/self.dx**2
-    t3 = Dcent*(var.roll(y=-1,roll_coords=False)+var.roll(y=1,roll_coords=False)-2*var)/self.dy**2
-    t4 = (jp(var)-jm(var))*(jp(Dcent)-jm(Dcent))/self.dy**2
-    
-    return t1+t2+t3+t4
-    
-    
-def lapu_g(self,var):
-    """Laplacian operator for Du based on ghost values"""
-    Dcent = ip(self.D[0,:,:])
-    
-    t1 = Dcent*(var.roll(x=-1,roll_coords=False)+var.roll(x=1,roll_coords=False)-2*var)/self.dx**2
-    t2 = (ip(var)-im(var))*(ip(Dcent)-im(Dcent))/self.dx**2
-    t3 = Dcent*(var.roll(y=-1,roll_coords=False)+var.roll(y=1,roll_coords=False)-2*var)/self.dy**2
-    t4 = (jp(var)-jm(var))*(jp(Dcent)-jm(Dcent))/self.dy**2
-    
-    return t1+t2+t3+t4
-    
-def lapv_g(self,var):
-    """Laplacian operator for Dv based on ghost values"""
-    Dcent = jp(self.D[0,:,:])
-    
-    t1 = Dcent*(var.roll(x=-1,roll_coords=False)+var.roll(x=1,roll_coords=False)-2*var)/self.dx**2
-    t2 = (ip(var)-im(var))*(ip(Dcent)-im(Dcent))/self.dx**2
-    t3 = Dcent*(var.roll(y=-1,roll_coords=False)+var.roll(y=1,roll_coords=False)-2*var)/self.dy**2
-    t4 = (jp(var)-jm(var))*(jp(Dcent)-jm(Dcent))/self.dy**2
-
-    return t1+t2+t3+t4

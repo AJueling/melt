@@ -56,8 +56,7 @@ class SheetModel(ModelConstants):
         self.days = 6        # Total runtime in days
         self.maxvel = 3       # Maximum velocity to define time step and diffusivity [m/s]
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
-        self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]
-        self.nfs  = -1
+        self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]     
         
     def drho(self):
         """Linear equation of state. delta rho/rho0"""
@@ -76,53 +75,53 @@ class SheetModel(ModelConstants):
         t1 = su.convT(self,self.D[1,:,:])
         t2 = self.melt()
         t3 = self.entr()
-        t4 = self.Ddiff*self.Ah*su.lap(self,self.D[0,:,:])
+        t4 = self.Ddiff*self.Ah*su.lap(self)
         
         return (t1+t2+t3+t4) * self.tmask
 
     def rhsu(self):
         """right hand side of d/dt u"""
         
-        t1 = -self.u[1,:,:] * su.ip((self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt)
+        t1 = -self.u[1,:,:] * su.ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
         
-        t2 = su.convu_g(self)
-
+        t2 = su.convu(self)
+        
         #Equations from Hewitt 2020:
-        #t3 =  su.ip(self.drho())*self.g*su.ip(self.D[1,:,:]) * self.dzdx * self.tmask
-        #t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(x=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
-
-        #Equations from Holland et al 2006:
-        t3 = -self.g*su.ip(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(x=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
-        t4 = .5*self.g*su.ip(self.D[1,:,:])**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
+        t3 =  self.g*su.ip_(self.drho()*self.D[1,:,:]*self.dzdx,self.tmask)
+        t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(x=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
         
-        t5 =  su.ip(self.D[1,:,:])*self.f*su.ip(su.jm(self.v[1,:,:]))
+        #Equations from Holland et al 2006:
+        #t3 = -self.g*su.ip(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(x=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
+        #t4 = .5*self.g*su.ip(self.D[1,:,:])**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
+        
+        t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*su.ip(su.jm(self.v[1,:,:]))
         t6 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
         
-        t7 = self.Ah*su.lapu(self,self.u[0,:,:])
+        t7 = self.Ah*su.lapu(self)
 
-        return (t1+t2+t3+t4+t5+t6+t7)/su.ip(self.D[1,:,:]) * self.umask
+        return ((t1+t2+t3+t4+t5+t6+t7)/su.ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask
 
     def rhsv(self):
         """right hand side of d/dt v"""
 
-        t1 = -self.v[1,:,:] * su.jp((self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt) 
+        t1 = -self.v[1,:,:] * su.jp_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt) 
         
-        t2 = su.convv_g(self)
-
+        t2 = su.convv(self)
+        
         #Equations from Hewitt 2020:
-        #t3 =  su.jp(self.drho())*self.g*su.jp(self.D[1,:,:]) * self.dzdy * self.tmask
-        #t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(y=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
+        t3 =  self.g*su.jp_(self.drho()*self.D[1,:,:]*self.dzdy,self.tmask)
+        t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(y=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
 
         #Equations from Holland et al 2006:
-        t3 = -self.g*su.jp(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(y=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dy * self.tmask# * self.tmask.roll(y=-1,roll_coords=False)
-        t4 = .5*self.g*su.jp(self.D[1,:,:])**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask #* self.tmask.roll(y=-1,roll_coords=False)
+        #t3 = -self.g*su.jp(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(y=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dy * self.tmask# * self.tmask.roll(y=-1,roll_coords=False)
+        #t4 = .5*self.g*su.jp(self.D[1,:,:])**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask #* self.tmask.roll(y=-1,roll_coords=False)
 
-        t5 = -su.jp(self.D[1,:,:])*self.f*su.jp(su.im(self.u[1,:,:])) 
+        t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*su.jp(su.im(self.u[1,:,:])) 
         t6 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
         
-        t7 = self.Ah*su.lapv(self,self.v[0,:,:])
+        t7 = self.Ah*su.lapv(self)
             
-        return (t1+t2+t3+t4+t5+t6+t7)/su.jp(self.D[1,:,:]) * self.vmask
+        return ((t1+t2+t3+t4+t5+t6+t7)/su.jp_(self.D[1,:,:],self.tmask)).fillna(0) * self.vmask
     
     def rhsT(self):
         """right hand side of d/dt T"""
@@ -133,7 +132,7 @@ class SheetModel(ModelConstants):
         t4 =  self.melt()*(self.Tf - self.L/self.cp)
         t5 =  self.Ah*su.lapT(self,self.T[0,:,:])
 
-        return (t1+t2+t3+t4+t5)/self.D[1,:,:] * self.tmask
+        return ((t1+t2+t3+t4+t5)/self.D[1,:,:]).fillna(0) * self.tmask
 
     def rhsS(self):
         """right hand side of d/dt S"""
@@ -143,7 +142,7 @@ class SheetModel(ModelConstants):
         t3 =  self.entr()*self.Sa
         t4 =  self.Ah*su.lapT(self,self.S[0,:,:])
         
-        return (t1+t2+t3+t4)/self.D[1,:,:] * self.tmask
+        return ((t1+t2+t3+t4)/self.D[1,:,:]).fillna(0) * self.tmask
     
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
@@ -220,7 +219,6 @@ class SheetModel(ModelConstants):
             self.updatevars()
             self.integrate()
             self.timefilter()
-            su.boundaries(self)
             if self.t in np.arange(1,self.nt,self.diagint):
                 self.printdiags()
     
