@@ -70,7 +70,7 @@ class IdealGeometry(object):
         elif case==3:
             mask[:,0] = 2
             mask[-1,:] = 2
-            mask[0:] = 2
+            mask[0,:] = 2
             mask[:,-1] = 0
             xx, yy = np.meshgrid(np.linspace(1,0,nx), np.linspace(0,np.pi,ny))
             curv = 250
