@@ -56,7 +56,10 @@ class SheetModel(ModelConstants):
         self.days = 6        # Total runtime in days
         self.maxvel = 3       # Maximum velocity to define time step and diffusivity [m/s]
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
-        self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]     
+        self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
+        
+        self.debug = False
+        self.verbose = False
         
     def drho(self):
         """Linear equation of state. delta rho/rho0"""
@@ -76,6 +79,10 @@ class SheetModel(ModelConstants):
         t2 = self.melt()
         t3 = self.entr()
         t4 = self.Ddiff*self.Ah*su.lap(self)
+        
+        if self.debug:
+            print('rhs D')
+            print(f't1 {abs(t1*self.tmask).mean().values} | t2 {abs(t2*self.tmask).mean().values} | t3 {abs(t3*self.tmask).mean().values} | t4 {abs(t4*self.tmask).mean().values} ')
         
         return (t1+t2+t3+t4) * self.tmask
 
@@ -105,6 +112,10 @@ class SheetModel(ModelConstants):
         
         t7 = self.Ah*su.lapu(self)
 
+        if self.debug:
+            print('rhs u')
+            print(f't1 {abs(t1*self.umask).mean().values} | t2 {abs(t2*self.umask).mean().values} | t3 {abs(t3*self.umask).mean().values} | t4 {abs(t4*self.umask).mean().values} | t5 {abs(t5*self.umask).mean().values} | t6 {abs(t6*self.umask).mean().values} | t7 {abs(t7*self.umask).mean().values}')
+        
         return ((t1+t2+t3+t4+t5+t6+t7)/su.ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask
 
     def rhsv(self):
@@ -132,7 +143,11 @@ class SheetModel(ModelConstants):
         t6 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
         
         t7 = self.Ah*su.lapv(self)
-            
+
+        if self.debug:
+            print('rhs v')
+            print(f't1 {abs(t1*self.vmask).mean().values} | t2 {abs(t2*self.vmask).mean().values} | t3 {abs(t3*self.vmask).mean().values} | t4 {abs(t4*self.vmask).mean().values} | t5 {abs(t5*self.vmask).mean().values} | t6 {abs(t6*self.vmask).mean().values} | t7 {abs(t7*self.vmask).mean().values}')
+        
         return ((t1+t2+t3+t4+t5+t6+t7)/su.jp_(self.D[1,:,:],self.tmask)).fillna(0) * self.vmask
     
     def rhsT(self):
@@ -204,8 +219,11 @@ class SheetModel(ModelConstants):
         #Integrated volume thickness convergence == net in/outflow [Sv]
         diag7 = 1e-6*(su.convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum().values
         
-        print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag7:.03f} Sv')
-            
+        #Maximum velocity [m/s]
+        diag8 = ((su.im(self.u[1,:,:])**2 + su.jm(self.v[1,:,:])**2)**.5).max().values
+        
+        print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag7:.03f} Sv | Max. vel: {diag8:.03f} m/s')
+                  
         return
                 
     def updatevars(self):
@@ -222,26 +240,29 @@ class SheetModel(ModelConstants):
         su.plotpanels(self)
         return
 
-    def compute(self): 
+    def compute(self):
         su.create_mask(self)
         su.create_grid(self)
         su.initialize_vars(self)
 
-        for self.t in range(self.nt):      
+        for self.t in range(self.nt):
             self.updatevars()
             self.integrate()
             self.timefilter()
-            if self.t in np.arange(1,self.nt,self.diagint):
+            if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 self.printdiags()
     
-        print('-----------------------------')
-        print(f'Run completed, final values:')
-        self.printdiags()
-        
+        if self.verbose:
+            print('-----------------------------')
+            print(f'Run completed, final values:')
+            self.printdiags()
+            print('-----------------------------')
+            print('-----------------------------')
         #Output
         melt = xr.DataArray(self.melt(),dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
         entr = xr.DataArray(self.entr(),dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
+        mav  = xr.DataArray(3600*24*365.25*((self.melt()*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()).values,name='mav')
         
-        ds = xr.merge([self.D[1,:,:],self.u[1,:,:],self.v[1,:,:],self.T[1,:,:],self.S[1,:,:],melt,entr])
+        ds = xr.merge([self.D[1,:,:],self.u[1,:,:],self.v[1,:,:],self.T[1,:,:],self.S[1,:,:],melt,entr,mav])
     
         return ds

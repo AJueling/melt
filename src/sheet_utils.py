@@ -48,13 +48,14 @@ def create_grid(self):
     self.time = np.linspace(0,self.days,self.nt)                     # Time in days 
     
     #Other parameters
-    self.minD = .01                                                  # Minimum value for thickness
+    #self.minD = .01                                                  # Minimum value for thickness
     
     if (len(self.y)==3 or len(self.x)==3):
         print('1D run, using free slip')
         self.slip = 0                                                # Assure free-slip is used in 1D simulation
     
-    print(f'Ah: {self.Ah:.0f} m2/s  | dt: {self.dt:.0f} sec | nt: {self.nt} steps')
+    if self.verbose:
+        print(f'Ah: {self.Ah:.0f} m2/s  | dt: {self.dt:.0f} sec | nt: {self.nt} steps')
     return
 
 def initialize_vars(self):
@@ -73,16 +74,17 @@ def initialize_vars(self):
     self.Tf = self.l1*self.Sa+self.l2+self.l3*self.zb
         
     #Initial values
-    self.D += 1
+    self.D += 10
     self.T += self.Tf 
     self.S += 30 
-    
+
     #Perform first integration step with 1 dt
     self.D[2,:,:] = self.D[0,:,:] + self.dt * self.rhsD()
     self.u[2,:,:] = self.u[0,:,:] + self.dt * self.rhsu()
     self.v[2,:,:] = self.v[0,:,:] + self.dt * self.rhsv()
     self.T[2,:,:] = self.T[0,:,:] + self.dt * self.rhsT()
-    self.S[2,:,:] = self.S[0,:,:] + self.dt * self.rhsS()       
+    self.S[2,:,:] = self.S[0,:,:] + self.dt * self.rhsS()
+
     
     return
 
@@ -192,10 +194,11 @@ def convu(self):
     DS = ((DD + DD.roll(x=-1,roll_coords=False) + DD.roll(y= 1,roll_coords=False) + DD.roll(x=-1,roll_coords=False).roll(y= 1,roll_coords=False))\
           /(mm + mm.roll(x=-1,roll_coords=False) + mm.roll(y= 1,roll_coords=False) + mm.roll(x=-1,roll_coords=False).roll(y= 1,roll_coords=False))).fillna(0)
     
-    tN = -DN                              *jp_(self.u[1,:,:],self.umask) *ip(self.v[1,:,:])                             /self.dy #* self.umask.roll(y=-1,roll_coords=False)
-    tS =  DS                              *jm_(self.u[1,:,:],self.umask) *ip(self.v[1,:,:]).roll(y=1,roll_coords=False) /self.dy #* self.umask.roll(y= 1,roll_coords=False)
-    tE = -DD.roll(x=-1,roll_coords=False) *ip_(self.u[1,:,:],self.umask) *ip(self.u[1,:,:])                             /self.dx #* self.umask.roll(x=-1,roll_coords=False)
-    tW =  DD                              *im_(self.u[1,:,:],self.umask) *im(self.u[1,:,:])                             /self.dx #* self.umask.roll(x= 1,roll_coords=False)
+    tN = -DN                              *ip(self.v[1,:,:])                             *(jp_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*ip(self.grd.roll(y=-1,roll_coords=False))) /self.dy
+    tS =  DS                              *ip(self.v[1,:,:]).roll(y=1,roll_coords=False) *(jm_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*ip(self.grd.roll(y= 1,roll_coords=False))) /self.dy
+    tE = -DD.roll(x=-1,roll_coords=False) *ip(self.u[1,:,:])                             *ip_(self.u[1,:,:],self.umask) /self.dx
+    tW =  DD                              *im(self.u[1,:,:])                             *im_(self.u[1,:,:],self.umask) /self.dx
+    
     return (tN+tS+tE+tW) * self.umask
 
 def convv(self):
@@ -208,10 +211,11 @@ def convv(self):
     DW = ((DD + DD.roll(x= 1,roll_coords=False) + DD.roll(y=-1,roll_coords=False) + DD.roll(x= 1,roll_coords=False).roll(y= 1,roll_coords=False))\
           /(mm + mm.roll(x= 1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x= 1,roll_coords=False).roll(y=-1,roll_coords=False))).fillna(0)
     
-    tN = -DD.roll(y=-1,roll_coords=False)  *jp_(self.v[1,:,:],self.vmask) *jp(self.v[1,:,:])                             /self.dy #* self.vmask.roll(y=-1,roll_coords=False)
-    tS =  DD                               *jm_(self.v[1,:,:],self.vmask) *jm(self.v[1,:,:])                             /self.dy #* self.vmask.roll(y= 1,roll_coords=False)
-    tE = -DE                               *ip_(self.v[1,:,:],self.vmask) *jp(self.u[1,:,:])                             /self.dx #* self.vmask.roll(x=-1,roll_coords=False)
-    tW =  DW                               *im_(self.v[1,:,:],self.vmask) *jp(self.u[1,:,:]).roll(x=1,roll_coords=False) /self.dx #* self.vmask.roll(x= 1,roll_coords=False)
+    tN = -DD.roll(y=-1,roll_coords=False) *jp(self.v[1,:,:])                             *jp_(self.v[1,:,:],self.vmask)  /self.dy
+    tS =  DD                              *jm(self.v[1,:,:])                             *jm_(self.v[1,:,:],self.vmask)  /self.dy
+    tE = -DE                              *jp(self.u[1,:,:])                             *(ip_(self.v[1,:,:],self.vmask)-self.slip*self.v[1,:,:]*jp(self.grd.roll(x=-1,roll_coords=False))) /self.dx
+    tW =  DW                              *jp(self.u[1,:,:]).roll(x=1,roll_coords=False) *(im_(self.v[1,:,:],self.vmask)-self.slip*self.v[1,:,:]*jp(self.grd.roll(x= 1,roll_coords=False))) /self.dx
+
     return (tN+tS+tE+tW) * self.vmask     
 
 def updatevar(self,var):
