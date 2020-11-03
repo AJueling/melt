@@ -41,8 +41,8 @@ class PicoModel(ModelConstants, RealGeometry):
         boxnr 0 refers to ambient (temperature/salinity) or total (area/melt)
         """
         assert name in glaciers or name in cases, f'name must be in {cases} or {glaciers}'
-        assert type(Ta) is float or Ta is None, 'Ta is not the right type'
-        assert type(Sa) is float or Sa is None, 'Sa is not the right type'
+        # assert type(Ta) is float or Ta is None, f'Ta is not the right type, {type(Ta)}'
+        # assert type(Sa) is float or Sa is None, 'Sa is not the right type'
         assert type(n)==int and n>0 and n<10 or n is None
         ModelConstants.__init__(self)
         self.n = n

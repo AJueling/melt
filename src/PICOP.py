@@ -15,17 +15,17 @@ class PicoPlumeModel(PicoModel, PlumeModel, RealGeometry):
     def __init__(self, name, Ta=None, Sa=None, n=None, ds=None):
         """ create geometry """
         assert name in glaciers or name in cases
-        assert type(Ta) is float or Ta is None
-        assert type(Sa) is float or Sa is None
+        # assert type(Ta) is float or Ta is None
+        # assert type(Sa) is float or Sa is None
         assert type(n)==int and n>0 and n<10 or n is None
 
-        PicoModel.__init__(self, name=name)
+        PicoModel.__init__(self, name=name, Ta=Ta, Sa=Sa, n=n)
         # self.compute_pico()
         # also initiates ModelConstants
         # loads 
 
         # if n is None:  n = self.find('n')
-        # if ds is None:  # load PICOP geometry file
+        # if ds is None:  # load PICOP geometry file    
         #     RealGeometry.__init__(self, name=name, n=n)
         #     self.ds_geometry = self.PICOP_geometry().drop(['mapping', 'spatial_ref'])
         # else:

@@ -60,6 +60,8 @@ class IdealGeometry(object):
             elif dim=='y': other_dim = 'x'
             da = xr.DataArray(data=np.arange(1,n+1,n/len(ds[dim])).astype(int), dims=dim, coords={dim:ds[dim]})
             da = da.expand_dims({other_dim:ds[other_dim]})
+            if dim=='y':
+                da = da.T
             return da
 
         def area_per_box(n):
@@ -100,7 +102,7 @@ class IdealGeometry(object):
             ds.mask[-1,:] = 0
             dgrl = d_y
 
-        ds['box']     = define_boxes(dim='x', n=n)
+        ds['box']     = define_boxes(dim=box_dim, n=n)
         ds['area_k']  = area_per_box(n=3)
         ds['draft']   = (['y','x'], draft              )
         ds['Ta']      = (['y','x'], Ta*np.ones((ny,nx)))
