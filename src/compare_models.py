@@ -2,7 +2,7 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 
-from geometry import glaciers
+from real_geometry import glaciers
 from PICO import PicoModel, table2
 
 def compare_PICO():

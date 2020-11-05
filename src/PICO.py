@@ -7,7 +7,7 @@ from real_geometry import RealGeometry, glaciers, path, noPICO, table2
 from ideal_geometry import IdealGeometry, cases
 
 
-class PicoModel(ModelConstants, RealGeometry):
+class PicoModel(ModelConstants):#, RealGeometry):
     """ 2D melt model by Reese et al. (2018), doi: 10.5194/tc-12-1969-2018
         melt plume driven by the ice pump circulation
         assumes: small angle
@@ -89,10 +89,10 @@ class PicoModel(ModelConstants, RealGeometry):
                 pdict = dict(Ta=Ta, Sa=Sa, n=self.n)
                 self.ds = IdealGeometry(name=self.name, pdict=pdict).create()
             elif self.name in glaciers:  # realistic geometry
-                if self.n is None:  self.n = RealGeometry.find(name, 'n')
+                if self.n is None:  self.n = RealGeometry.find(self.name, 'n')
                 # RealGeometry.__init__(self, name=name, n=n)  # old syntax, need to try if new one works before deleting
                 # self.ds = self.PICO_geometry()
-                self.ds = RealGeometry(name=name, n=n)
+                self.ds = RealGeometry(name=self.name, n=self.n).PICO_geometry()
                 if Ta is None:  Ta = RealGeometry.find(self.name, 'Ta')
                 if Sa is None:  Sa = RealGeometry.find(self.name, 'Sa')
 
@@ -161,9 +161,9 @@ class PicoModel(ModelConstants, RealGeometry):
         m = xr.DataArray(data=self.m, name='mk', **kwargs)
         q = xr.DataArray(data=self.q/1e6, name='q')
         T.attrs = {'long_name':'ambient temperature of box k', 'units':'degC'}
-        T.attrs = {'long_name':'ambient salinity of box k', 'units':'psu'}
+        S.attrs = {'long_name':'ambient salinity of box k', 'units':'psu'}
         m.attrs = {'long_name':'average melt of box k', 'units':'m/yr'}
-        m.attrs = {'long_name':'overturning circulation', 'units':'Sv'}
+        q.attrs = {'long_name':'overturning circulation', 'units':'Sv'}
         ds = xr.merge([self.p, self.M, T, S, m, q])
         ds.to_netcdf(self.fn_PICO_output)
         return self.ds, ds  # geometry dataset, PICO output dataset
