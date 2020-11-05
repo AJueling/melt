@@ -1,0 +1,3 @@
+from https://nsidc.org/data/NSIDC-0756/versions/2
+
+user manual:  https://nsidc.org/sites/nsidc.org/files/NSIDC-0756-V002-UserGuide.pdf
