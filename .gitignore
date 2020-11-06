@@ -145,3 +145,4 @@ data/BedMachineAntarctica_2020-07-15_v02.nc
 src/sheet_utils_messy.py
 src/sheet_messy.py
 src/ipynb/copy_stripped_notebooks.py
+src/ideal_geometry.py
