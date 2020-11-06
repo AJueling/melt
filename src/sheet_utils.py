@@ -67,6 +67,7 @@ def initialize_vars(self):
     self.S = xr.DataArray(np.zeros((3,self.ny,self.nx)),dims=['n','y','x'],coords={'y':self.y,'x':self.x},name='S')
 
     #Draft dz/dx and dz/dy on t-grid
+    "Can be replaced by np.gradient for clarity"
     self.dzdx = ddxT_e(self,self.zb)
     self.dzdy = ddyT_e(self,self.zb)
     
@@ -74,7 +75,7 @@ def initialize_vars(self):
     self.Tf = self.l1*self.Sa+self.l2+self.l3*self.zb
         
     #Initial values
-    self.D += 10
+    self.D += 1
     self.T += self.Tf 
     self.S += 30 
 
@@ -158,7 +159,7 @@ def lapu(self):
     """Laplacian operator for Du"""
     Dcent = ip_(self.D[0,:,:],self.tmask)
     var = self.u[0,:,:]
-    
+
     tN = jp_(Dcent,self.tmask)*(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y=-1,roll_coords=False))/self.dy**2
     tS = jm_(Dcent,self.tmask)*(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y= 1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y= 1,roll_coords=False))/self.dy**2  
     tE = self.D[0,:,:].roll(x=-1,roll_coords=False)   *(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False)
@@ -174,6 +175,7 @@ def lapv(self):
     tS = self.D[0,:,:]                                *(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn)
     tE = ip_(Dcent,self.tmask)*(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x=-1,roll_coords=False))/self.dx**2
     tW = im_(Dcent,self.tmask)*(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x= 1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x= 1,roll_coords=False))/self.dx**2  
+
     return (tN+tS+tE+tW) * self.vmask
 
 def convT(self,var):
@@ -250,12 +252,8 @@ def addpanel(self,dax,var,cmap,title,symm=True,stream=False):
     return
 
 def plotpanels(self):
-    fig,ax = plt.subplots(2,4,figsize=(15,8),sharex=True,sharey=True)            
+    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
     
-    #pltvar = self.rhsu()
-    #pltvar2 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(x=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dx * self.tmask
-    #addpanel(self,ax[0,0],pltvar ,'cmo.curl','rhsu')
-    #addpanel(self,ax[1,0],pltvar2,'cmo.curl','Diff u')
     addpanel(self,ax[0,0],self.u[1,:,:],'cmo.curl','U velocity')
     addpanel(self,ax[1,0],self.v[1,:,:],'cmo.curl','V velocity')
             

@@ -16,8 +16,8 @@ class SheetModel(ModelConstants):
             x      ..  [m]     x coordinate
             y      ..  [m]     y coordinate
 
+            2D [y,x] fields:
             mask   ..  [bin]   mask identifying ocean (0), grounded ice (2), ice shelf (3)
-
             draft  ..  [m]     ice shelf draft
             Ta     ..  [degC]  ambient temperature
             Sa     ..  [psu]   ambient salinity
@@ -53,13 +53,15 @@ class SheetModel(ModelConstants):
         #Some input params
         self.diagint = 100    # Timestep at which to print diagnostics
         self.Ddiff = .01      # Factor to reduce diffusion in thickness
-        self.days = 6        # Total runtime in days
-        self.maxvel = 3       # Maximum velocity to define time step and diffusivity [m/s]
+        self.days = 6         # Total runtime in days
+        self.maxvel = 2       # Maximum velocity to define time step and diffusivity [m/s]
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
         
+        #Some parameters for displaying output
         self.debug = False
         self.verbose = False
+        self.figsize = (15,8)
         
     def drho(self):
         """Linear equation of state. delta rho/rho0"""
@@ -90,26 +92,11 @@ class SheetModel(ModelConstants):
         """right hand side of d/dt u"""
         
         t1 = -self.u[1,:,:] * su.ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
-        
         t2 = su.convu(self)
-        
-        #Equations from Hewitt 2020:
-        t3 =  self.g*su.ip_(self.drho()*self.D[1,:,:]*self.dzdx,self.tmask)
-        t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(x=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
-        
-        #Equations from Holland et al 2006:
-        #t3 = -self.g*su.ip(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(x=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
-        #t4 = .5*self.g*su.ip(self.D[1,:,:])**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
-        
-        #vv = self.v[1,:,:]*self.vmask
-        #mm = self.vmask
-        #vc = ((vv + vv.roll(y=1,roll_coords=False) + vv.roll(x=-1,roll_coords=False) + vv.roll(y=1,roll_coords=False).roll(x=1,roll_coords=False))\
-        #  /(mm + mm.roll(y=1,roll_coords=False) + mm.roll(x=-1,roll_coords=False) + mm.roll(y=1,roll_coords=False).roll(x=1,roll_coords=False))).fillna(0)
-        #t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*vc
-        
+        t3 = -self.g*su.ip_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False) - su.ip_(self.dzdx,self.tmask))
+        t4 = .5*self.g*su.ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
         t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*su.ip(su.jm(self.v[1,:,:]))
         t6 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
-        
         t7 = self.Ah*su.lapu(self)
 
         if self.debug:
@@ -122,26 +109,11 @@ class SheetModel(ModelConstants):
         """right hand side of d/dt v"""
 
         t1 = -self.v[1,:,:] * su.jp_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt) 
-        
         t2 = su.convv(self)
-        
-        #Equations from Hewitt 2020:
-        t3 =  self.g*su.jp_(self.drho()*self.D[1,:,:]*self.dzdy,self.tmask)
-        t4 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(y=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
-
-        #Equations from Holland et al 2006:
-        #t3 = -self.g*su.jp(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(y=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dy * self.tmask# * self.tmask.roll(y=-1,roll_coords=False)
-        #t4 = .5*self.g*su.jp(self.D[1,:,:])**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask #* self.tmask.roll(y=-1,roll_coords=False)
-
-        #uu = self.u[1,:,:]*self.umask
-        #mm = self.umask
-        #uc = ((uu + uu.roll(x=1,roll_coords=False) + uu.roll(y=-1,roll_coords=False) + uu.roll(x=1,roll_coords=False).roll(y=1,roll_coords=False))\
-        #  /(mm + mm.roll(x=1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x=1,roll_coords=False).roll(y=1,roll_coords=False))).fillna(0)
-        #t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*uc
-        
+        t3 = -self.g*su.jp_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(y=-1,roll_coords=False)-self.D[1,:,:])/self.dy * self.tmask*self.tmask.roll(y=-1,roll_coords=False) - su.jp_(self.dzdy,self.tmask))
+        t4 = .5*self.g*su.jp_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
         t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*su.jp(su.im(self.u[1,:,:])) 
         t6 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
-        
         t7 = self.Ah*su.lapv(self)
 
         if self.debug:
