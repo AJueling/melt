@@ -16,8 +16,8 @@ class SheetModel(ModelConstants):
             x      ..  [m]     x coordinate
             y      ..  [m]     y coordinate
 
+            2D [y,x] fields:
             mask   ..  [bin]   mask identifying ocean (0), grounded ice (2), ice shelf (3)
-
             draft  ..  [m]     ice shelf draft
             Ta     ..  [degC]  ambient temperature
             Sa     ..  [psu]   ambient salinity
@@ -53,11 +53,15 @@ class SheetModel(ModelConstants):
         #Some input params
         self.diagint = 100    # Timestep at which to print diagnostics
         self.Ddiff = .01      # Factor to reduce diffusion in thickness
-        self.days = 12        # Total runtime in days
-        self.maxvel = 3       # Maximum velocity to define time step and diffusivity [m/s]
+        self.days = 6         # Total runtime in days
+        self.maxvel = 2       # Maximum velocity to define time step and diffusivity [m/s]
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
-        self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]
-        self.nfs  = -1
+        self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
+        
+        #Some parameters for displaying output
+        self.debug = False
+        self.verbose = False
+        self.figsize = (15,8)
         
     def drho(self):
         """Linear equation of state. delta rho/rho0"""
@@ -76,53 +80,47 @@ class SheetModel(ModelConstants):
         t1 = su.convT(self,self.D[1,:,:])
         t2 = self.melt()
         t3 = self.entr()
-        t4 = self.Ddiff*self.Ah*su.lap(self,self.D[0,:,:])
+        t4 = self.Ddiff*self.Ah*su.lap(self)
+        
+        if self.debug:
+            print('rhs D')
+            print(f't1 {abs(t1*self.tmask).mean().values} | t2 {abs(t2*self.tmask).mean().values} | t3 {abs(t3*self.tmask).mean().values} | t4 {abs(t4*self.tmask).mean().values} ')
         
         return (t1+t2+t3+t4) * self.tmask
 
     def rhsu(self):
         """right hand side of d/dt u"""
         
-        t1 = -self.u[1,:,:] * su.ip((self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt)        
-        t2 =  (self.D[1,:,:]*su.im(self.u[1,:,:])**2 - self.D[1,:,:].roll(x=-1,roll_coords=False)*su.ip(self.u[1,:,:])**2)/self.dx  # * self.tmask.roll(x=-1,roll_coords=False)
-        t3 =  (su.jm(su.ip(self.D[1,:,:]))*su.jm(self.u[1,:,:])*su.ip(self.v[1,:,:].roll(y=-1,roll_coords=False)) - su.jp(su.ip(self.D[1,:,:]))*su.jp(self.u[1,:,:])*su.ip(self.v[1,:,:]))/self.dy * self.vmask # * self.tmask.roll(y=-1,roll_coords=False)
+        t1 = -self.u[1,:,:] * su.ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
+        t2 = su.convu(self)
+        t3 = -self.g*su.ip_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False) - su.ip_(self.dzdx,self.tmask))
+        t4 = .5*self.g*su.ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
+        t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*su.ip(su.jm(self.v[1,:,:]))
+        t6 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
+        t7 = self.Ah*su.lapu(self)
 
-        #Equations from Hewitt 2020:
-        #t4 =  su.ip(self.drho())*self.g*su.ip(self.D[1,:,:]) * self.dzdx * self.tmask
-        #t5 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(x=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
-
-        #Equations from Holland et al 2006:
-        t4 = -self.g*su.ip(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(x=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
-        t5 = .5*self.g*su.ip(self.D[1,:,:])**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask# * self.tmask.roll(x=-1,roll_coords=False)
+        if self.debug:
+            print('rhs u')
+            print(f't1 {abs(t1*self.umask).mean().values} | t2 {abs(t2*self.umask).mean().values} | t3 {abs(t3*self.umask).mean().values} | t4 {abs(t4*self.umask).mean().values} | t5 {abs(t5*self.umask).mean().values} | t6 {abs(t6*self.umask).mean().values} | t7 {abs(t7*self.umask).mean().values}')
         
-        t6 =  su.ip(self.D[1,:,:])*self.f*su.ip(su.jm(self.v[1,:,:]))
-        t7 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
-        
-        t8 = self.Ah*su.lapu(self,self.u[0,:,:])
-
-        return (t1+t2+t3+t4+t5+t6+t7+t8)/su.ip(self.D[1,:,:]) * self.umask
+        return ((t1+t2+t3+t4+t5+t6+t7)/su.ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask
 
     def rhsv(self):
         """right hand side of d/dt v"""
 
-        t1 = -self.v[1,:,:] * su.jp((self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt) 
-        t2 =  (su.im(su.jp(self.D[1,:,:]))*su.jp(self.u[1,:,:].roll(x=-1,roll_coords=False))*su.im(self.v[1,:,:]) - su.jp(su.ip(self.D[1,:,:]))*su.jp(self.u[1,:,:])*su.ip(self.v[1,:,:]))/self.dx * self.umask # * self.tmask.roll(x=-1,roll_coords=False)
-        t3 =  (self.D[1,:,:]*su.jm(self.v[1,:,:])**2 - self.D[1,:,:].roll(y=-1,roll_coords=False)*su.jp(self.v[1,:,:])**2)/self.dy * self.vmask  # * self.tmask.roll(y=-1,roll_coords=False)
+        t1 = -self.v[1,:,:] * su.jp_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt) 
+        t2 = su.convv(self)
+        t3 = -self.g*su.jp_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(y=-1,roll_coords=False)-self.D[1,:,:])/self.dy * self.tmask*self.tmask.roll(y=-1,roll_coords=False) - su.jp_(self.dzdy,self.tmask))
+        t4 = .5*self.g*su.jp_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
+        t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*su.jp(su.im(self.u[1,:,:])) 
+        t6 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
+        t7 = self.Ah*su.lapv(self)
 
-        #Equations from Hewitt 2020:
-        #t4 =  su.jp(self.drho())*self.g*su.jp(self.D[1,:,:]) * self.dzdy * self.tmask
-        #t5 = -.5*self.g*((self.drho()*self.D[1,:,:]**2).roll(y=-1,roll_coords=False) - self.drho()*self.D[1,:,:]**2)/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
-
-        #Equations from Holland et al 2006:
-        t4 = -self.g*su.jp(self.drho()*self.D[1,:,:])*((self.D[1,:,:]-self.zb).roll(y=-1,roll_coords=False) - (self.D[1,:,:]-self.zb))/self.dy * self.tmask# * self.tmask.roll(y=-1,roll_coords=False)
-        t5 = .5*self.g*su.jp(self.D[1,:,:])**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask #* self.tmask.roll(y=-1,roll_coords=False)
-
-        t6 = -su.jp(self.D[1,:,:])*self.f*su.jp(su.im(self.u[1,:,:])) 
-        t7 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
+        if self.debug:
+            print('rhs v')
+            print(f't1 {abs(t1*self.vmask).mean().values} | t2 {abs(t2*self.vmask).mean().values} | t3 {abs(t3*self.vmask).mean().values} | t4 {abs(t4*self.vmask).mean().values} | t5 {abs(t5*self.vmask).mean().values} | t6 {abs(t6*self.vmask).mean().values} | t7 {abs(t7*self.vmask).mean().values}')
         
-        t8 = self.Ah*su.lapv(self,self.v[0,:,:])
-            
-        return (t1+t2+t3+t4+t5+t6+t7+t8)/su.jp(self.D[1,:,:]) * self.vmask
+        return ((t1+t2+t3+t4+t5+t6+t7)/su.jp_(self.D[1,:,:],self.tmask)).fillna(0) * self.vmask
     
     def rhsT(self):
         """right hand side of d/dt T"""
@@ -133,7 +131,7 @@ class SheetModel(ModelConstants):
         t4 =  self.melt()*(self.Tf - self.L/self.cp)
         t5 =  self.Ah*su.lapT(self,self.T[0,:,:])
 
-        return (t1+t2+t3+t4+t5)/self.D[1,:,:] * self.tmask
+        return ((t1+t2+t3+t4+t5)/self.D[1,:,:]).fillna(0) * self.tmask
 
     def rhsS(self):
         """right hand side of d/dt S"""
@@ -143,7 +141,7 @@ class SheetModel(ModelConstants):
         t3 =  self.entr()*self.Sa
         t4 =  self.Ah*su.lapT(self,self.S[0,:,:])
         
-        return (t1+t2+t3+t4)/self.D[1,:,:] * self.tmask
+        return ((t1+t2+t3+t4)/self.D[1,:,:]).fillna(0) * self.tmask
     
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
@@ -193,8 +191,11 @@ class SheetModel(ModelConstants):
         #Integrated volume thickness convergence == net in/outflow [Sv]
         diag7 = 1e-6*(su.convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum().values
         
-        print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag7:.03f} Sv')
-            
+        #Maximum velocity [m/s]
+        diag8 = ((su.im(self.u[1,:,:])**2 + su.jm(self.v[1,:,:])**2)**.5).max().values
+        
+        print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag7:.03f} Sv | Max. vel: {diag8:.03f} m/s')
+                  
         return
                 
     def updatevars(self):
@@ -211,25 +212,29 @@ class SheetModel(ModelConstants):
         su.plotpanels(self)
         return
 
-    def compute(self): 
+    def compute(self):
         su.create_mask(self)
         su.create_grid(self)
         su.initialize_vars(self)
 
-        for self.t in range(self.nt):      
+        for self.t in range(self.nt):
             self.updatevars()
             self.integrate()
             self.timefilter()
-            su.boundaries(self)
-            if self.t in np.arange(1,self.nt,self.diagint):
+            if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 self.printdiags()
     
-        print('-----------------------------')
-        print(f'Run completed, final values:')
-        self.printdiags()
+        if self.verbose:
+            print('-----------------------------')
+            print(f'Run completed, final values:')
+            self.printdiags()
+            print('-----------------------------')
+            print('-----------------------------')
+        #Output
         melt = xr.DataArray(self.melt(),dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
         entr = xr.DataArray(self.entr(),dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
+        mav  = xr.DataArray(3600*24*365.25*((self.melt()*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()).values,name='mav')
         
-        ds = xr.merge([self.D[1,:,:],self.u[1,:,:],self.v[1,:,:],self.T[1,:,:],self.S[1,:,:],melt,entr])
+        ds = xr.merge([self.D[1,:,:],self.u[1,:,:],self.v[1,:,:],self.T[1,:,:],self.S[1,:,:],melt,entr,mav])
     
         return ds
