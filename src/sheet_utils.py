@@ -42,8 +42,9 @@ def create_grid(self):
     self.yv = self.y+self.dy
         
     #Temporal parameters
-    self.Ah = .5*self.maxvel*self.dx.values                          # Laplacian diffusivity, equal for U,V,T,S
-    self.dt = min(self.dx/2/self.maxvel,self.dx**2/self.Ah/8).values # Time step in seconds
+    if self.detect_Ah_dt:
+        self.Ah = .5*self.maxvel*self.dx.values                          # Laplacian diffusivity, equal for U,V,T,S
+        self.dt = min(self.dx/2/self.maxvel,self.dx**2/self.Ah/8).values # Time step in seconds
     self.nt = int(self.days*24*3600/self.dt)+1                       # Number of time steps
     self.time = np.linspace(0,self.days,self.nt)                     # Time in days 
     

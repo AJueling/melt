@@ -58,6 +58,11 @@ class SheetModel(ModelConstants):
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
         
+        self.Ah = 500         # Only used if detect_Ah_dt = False
+        self.dt = 150         # Only used if detect_Ah_dt = False
+        
+        self.detect_Ah_dt = True #Base Ah and dt on input parameters
+        
         #Some parameters for displaying output
         self.debug = False
         self.verbose = False
@@ -96,7 +101,7 @@ class SheetModel(ModelConstants):
         t3 = -self.g*su.ip_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False) - su.ip_(self.dzdx,self.tmask))
         t4 = .5*self.g*su.ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
         t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*su.ip(su.jm(self.v[1,:,:]))
-        t6 = -self.Cd*self.u[1,:,:]*np.abs(self.u[1,:,:])
+        t6 = -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + su.ip(su.jm(self.v[1,:,:]))**2)**.5
         t7 = self.Ah*su.lapu(self)
 
         if self.debug:
@@ -113,7 +118,7 @@ class SheetModel(ModelConstants):
         t3 = -self.g*su.jp_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(y=-1,roll_coords=False)-self.D[1,:,:])/self.dy * self.tmask*self.tmask.roll(y=-1,roll_coords=False) - su.jp_(self.dzdy,self.tmask))
         t4 = .5*self.g*su.jp_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
         t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*su.jp(su.im(self.u[1,:,:])) 
-        t6 = -self.Cd*self.v[1,:,:]*np.abs(self.v[1,:,:])
+        t6 = -self.Cd*self.v[1,:,:]*(self.v[1,:,:]**2 + su.jp(su.im(self.u[1,:,:]))**2)**.5
         t7 = self.Ah*su.lapv(self)
 
         if self.debug:
