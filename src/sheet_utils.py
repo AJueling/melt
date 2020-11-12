@@ -161,6 +161,11 @@ def lapu(self):
     Dcent = ip_(self.D[0,:,:],self.tmask)
     var = self.u[0,:,:]
 
+    #tN = jp_(Dcent,self.tmask)*(var.roll(y=-1,roll_coords=False)-var)/self.dy**2  - self.slip*Dcent*var*ip(self.grd.roll(y=-1,roll_coords=False))/self.dy**2
+    #tS = jm_(Dcent,self.tmask)*(var.roll(y= 1,roll_coords=False)-var)/self.dy**2  - self.slip*Dcent*var*ip(self.grd.roll(y= 1,roll_coords=False))/self.dy**2  
+    #tE = self.D[0,:,:].roll(x=-1,roll_coords=False)   *(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 
+    #tW = self.D[0,:,:]                                *(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 
+    
     tN = jp_(Dcent,self.tmask)*(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y=-1,roll_coords=False))/self.dy**2
     tS = jm_(Dcent,self.tmask)*(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y= 1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y= 1,roll_coords=False))/self.dy**2  
     tE = self.D[0,:,:].roll(x=-1,roll_coords=False)   *(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False)
@@ -172,11 +177,15 @@ def lapv(self):
     Dcent = jp_(self.D[0,:,:],self.tmask)
     var = self.v[0,:,:]
     
+    #tN = self.D[0,:,:].roll(y=-1,roll_coords=False)   *(var.roll(y=-1,roll_coords=False)-var)/self.dy**2
+    #tS = self.D[0,:,:]                                *(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 
+    #tE = ip_(Dcent,self.tmask)*(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 - self.slip*Dcent*var*jp(self.grd.roll(x=-1,roll_coords=False))/self.dx**2
+    #tW = im_(Dcent,self.tmask)*(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 - self.slip*Dcent*var*jp(self.grd.roll(x= 1,roll_coords=False))/self.dx**2      
+    
     tN = self.D[0,:,:].roll(y=-1,roll_coords=False)   *(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) 
     tS = self.D[0,:,:]                                *(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn)
     tE = ip_(Dcent,self.tmask)*(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x=-1,roll_coords=False))/self.dx**2
     tW = im_(Dcent,self.tmask)*(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x= 1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x= 1,roll_coords=False))/self.dx**2  
-
     return (tN+tS+tE+tW) * self.vmask
 
 def convT(self,var):
@@ -196,11 +205,13 @@ def convu(self):
           /(mm + mm.roll(x=-1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x=-1,roll_coords=False).roll(y=-1,roll_coords=False))).fillna(0)
     DS = ((DD + DD.roll(x=-1,roll_coords=False) + DD.roll(y= 1,roll_coords=False) + DD.roll(x=-1,roll_coords=False).roll(y= 1,roll_coords=False))\
           /(mm + mm.roll(x=-1,roll_coords=False) + mm.roll(y= 1,roll_coords=False) + mm.roll(x=-1,roll_coords=False).roll(y= 1,roll_coords=False))).fillna(0)
+    DE = DD.roll(x=-1,roll_coords=False) + self.ocn.roll(x=-1,roll_coords=False) * DD
+    DW = DD                              + self.ocn                              * DD.roll(x=-1,roll_coords=False)
     
-    tN = -DN                              *ip(self.v[1,:,:])                             *(jp_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*ip(self.grd.roll(y=-1,roll_coords=False))) /self.dy
-    tS =  DS                              *ip(self.v[1,:,:]).roll(y=1,roll_coords=False) *(jm_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*ip(self.grd.roll(y= 1,roll_coords=False))) /self.dy
-    tE = -DD.roll(x=-1,roll_coords=False) *ip(self.u[1,:,:])                             *ip_(self.u[1,:,:],self.umask) /self.dx
-    tW =  DD                              *im(self.u[1,:,:])                             *im_(self.u[1,:,:],self.umask) /self.dx
+    tN = -DN *ip(self.v[1,:,:])                             *(jp_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*ip(self.grd.roll(y=-1,roll_coords=False))) /self.dy
+    tS =  DS *ip(self.v[1,:,:]).roll(y=1,roll_coords=False) *(jm_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*ip(self.grd.roll(y= 1,roll_coords=False))) /self.dy
+    tE = -DE *ip_(self.u[1,:,:],self.umask)                 *ip_(self.u[1,:,:],self.umask) /self.dx
+    tW =  DW *im_(self.u[1,:,:],self.umask)                 *im_(self.u[1,:,:],self.umask) /self.dx
     
     return (tN+tS+tE+tW) * self.umask
 
@@ -213,11 +224,13 @@ def convv(self):
           /(mm + mm.roll(x=-1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x=-1,roll_coords=False).roll(y=-1,roll_coords=False))).fillna(0)
     DW = ((DD + DD.roll(x= 1,roll_coords=False) + DD.roll(y=-1,roll_coords=False) + DD.roll(x= 1,roll_coords=False).roll(y= 1,roll_coords=False))\
           /(mm + mm.roll(x= 1,roll_coords=False) + mm.roll(y=-1,roll_coords=False) + mm.roll(x= 1,roll_coords=False).roll(y=-1,roll_coords=False))).fillna(0)
+    DN = DD.roll(y=-1,roll_coords=False) + self.ocn.roll(y=-1,roll_coords=False) * DD
+    DS = DD                              + self.ocn                              * DD.roll(y=-1,roll_coords=False)
     
-    tN = -DD.roll(y=-1,roll_coords=False) *jp(self.v[1,:,:])                             *jp_(self.v[1,:,:],self.vmask)  /self.dy
-    tS =  DD                              *jm(self.v[1,:,:])                             *jm_(self.v[1,:,:],self.vmask)  /self.dy
-    tE = -DE                              *jp(self.u[1,:,:])                             *(ip_(self.v[1,:,:],self.vmask)-self.slip*self.v[1,:,:]*jp(self.grd.roll(x=-1,roll_coords=False))) /self.dx
-    tW =  DW                              *jp(self.u[1,:,:]).roll(x=1,roll_coords=False) *(im_(self.v[1,:,:],self.vmask)-self.slip*self.v[1,:,:]*jp(self.grd.roll(x= 1,roll_coords=False))) /self.dx
+    tN = -DN *jp_(self.v[1,:,:],self.vmask)                 *jp_(self.v[1,:,:],self.vmask)  /self.dy
+    tS =  DS *jm_(self.v[1,:,:],self.vmask)                 *jm_(self.v[1,:,:],self.vmask)  /self.dy
+    tE = -DE *jp(self.u[1,:,:])                             *(ip_(self.v[1,:,:],self.vmask)-self.slip*self.v[1,:,:]*jp(self.grd.roll(x=-1,roll_coords=False))) /self.dx
+    tW =  DW *jp(self.u[1,:,:]).roll(x=1,roll_coords=False) *(im_(self.v[1,:,:],self.vmask)-self.slip*self.v[1,:,:]*jp(self.grd.roll(x= 1,roll_coords=False))) /self.dx
 
     return (tN+tS+tE+tW) * self.vmask     
 
@@ -266,6 +279,34 @@ def plotpanels(self):
             
     addpanel(self,ax[0,3],3600*24*365.25*self.melt(),'cmo.matter','Melt',symm=False)
     addpanel(self,ax[1,3],3600*24*365.25*self.entr(),'cmo.turbid','Entraiment',symm=False)                
+
+    plt.tight_layout()
+    plt.show()
+    
+def plotdudt(self):
+    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
+    
+    t1 = -self.u[1,:,:] * ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
+    t2 = convu(self)
+    t3 = -self.g*ip_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False) - ip_(self.dzdx,self.tmask))
+    t4 = .5*self.g*ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
+    t5 =  ip_(self.D[1,:,:],self.tmask)*self.f*ip(jm(self.v[1,:,:]))
+    t6 = -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5
+    t7 = self.Ah*lapu(self)
+    
+    tt = t1+t2+t3+t4+t5+t6+t7
+    
+    addpanel(self,ax[0,0],1e6*(tt/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','dU/dt')
+    addpanel(self,ax[1,0],1e6*(t1/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','dD/dt')
+            
+    addpanel(self,ax[0,1],1e6*(t2/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','conv u')
+    addpanel(self,ax[1,1],1e6*(t3/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','d (z-D)/dx')
+
+    addpanel(self,ax[0,2],1e6*(t4/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','d rho/dx')
+    addpanel(self,ax[1,2],1e6*(t5/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','f V')
+            
+    addpanel(self,ax[0,3],1e6*(t6/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','drag')
+    addpanel(self,ax[1,3],1e6*(t7/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask,'cmo.curl','lap')            
 
     plt.tight_layout()
     plt.show()

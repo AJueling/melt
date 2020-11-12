@@ -217,6 +217,10 @@ class SheetModel(ModelConstants):
         su.plotpanels(self)
         return
 
+    def plotdiags(self):
+        su.plotdudt(self)
+        return
+    
     def compute(self):
         su.create_mask(self)
         su.create_grid(self)
