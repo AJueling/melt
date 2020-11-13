@@ -289,7 +289,7 @@ def plotdudt(self):
     t1 = -self.u[1,:,:] * ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
     t2 = convu(self)
     t3 = -self.g*ip_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False) - ip_(self.dzdx,self.tmask))
-    t4 = .5*self.g*ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
+    t4 = -.5*self.g*ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
     t5 =  ip_(self.D[1,:,:],self.tmask)*self.f*ip(jm(self.v[1,:,:]))
     t6 = -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5
     t7 = self.Ah*lapu(self)

@@ -99,7 +99,7 @@ class SheetModel(ModelConstants):
         t1 = -self.u[1,:,:] * su.ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
         t2 = su.convu(self)
         t3 = -self.g*su.ip_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False) - su.ip_(self.dzdx,self.tmask))
-        t4 = .5*self.g*su.ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
+        t4 = -.5*self.g*su.ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
         t5 =  su.ip_(self.D[1,:,:],self.tmask)*self.f*su.ip(su.jm(self.v[1,:,:]))
         t6 = -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + su.ip(su.jm(self.v[1,:,:]))**2)**.5
         t7 = self.Ah*su.lapu(self)
@@ -116,7 +116,7 @@ class SheetModel(ModelConstants):
         t1 = -self.v[1,:,:] * su.jp_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt) 
         t2 = su.convv(self)
         t3 = -self.g*su.jp_(self.drho()*self.D[1,:,:],self.tmask)*((self.D[1,:,:].roll(y=-1,roll_coords=False)-self.D[1,:,:])/self.dy * self.tmask*self.tmask.roll(y=-1,roll_coords=False) - su.jp_(self.dzdy,self.tmask))
-        t4 = .5*self.g*su.jp_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
+        t4 = -.5*self.g*su.jp_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
         t5 = -su.jp_(self.D[1,:,:],self.tmask)*self.f*su.jp(su.im(self.u[1,:,:])) 
         t6 = -self.Cd*self.v[1,:,:]*(self.v[1,:,:]**2 + su.jp(su.im(self.u[1,:,:]))**2)**.5
         t7 = self.Ah*su.lapv(self)
