@@ -156,3 +156,67 @@ class IdealGeometry(object):
         ds.alpha.attrs   = {'long_name':'local slope angle along stream lines', 'units':'rad'}
         ds.grl_adv.attrs = {'long_name':'advected grounding line depth / plume origin depth', 'units':'m'}
         return ds
+    
+def FavierTest(iceshelf,forcing):
+    dx,dy = 2e3,2e3
+    if iceshelf == 'fris':
+        lx,ly = 7e5,7e5
+        zdeep,zshallow = -1000,0
+    elif iceshelf == 'totten':
+        lx,ly = 1.5e5,3e4
+        zdeep,zshallow = -2000,-200
+    elif iceshelf == 'thwaites':
+        lx,ly = 4e4,4e4
+        zdeep,zshallow = -1000,-200
+    elif iceshelf == 'test':
+        lx,ly = 4e4,4e4
+        zdeep,zshallow = -1000,-800
+        
+    x = np.arange(0,lx,dx)
+    y = np.arange(0,ly,dy)
+    nx, ny = len(x), len(y)
+    mask = 3*np.ones((ny,nx))
+    mask[:,0] = 2
+    if iceshelf == 'thwaites':
+        mask[0,:] = 0
+        mask[-1,:] = 0
+    else:
+        mask[0,:] = 2
+        mask[-1,:] = 2
+    mask[:,-1] = 0
+    draft, _ = np.meshgrid(np.linspace(zdeep,zshallow,nx), np.ones((ny)))
+    
+    if forcing == 'cold0':
+        z = [-5000,-700,-300,0]
+        Tz = [-1.5,-1.5,-1.5,-1.5]
+        Sz = [34,34,34,34]
+    elif forcing == 'cold1':
+        z = [-5000,-700,-300,0]
+        Tz = [1.2,1.2,-0.6,-0.6]
+        Sz = [34.5,34.5,34,34]
+    elif forcing == 'warm0':
+        z = [-5000,-700,-300,0]
+        Tz = [1.2,1.2,-1.0,-1.0]
+        Sz = [34.5,34.5,34,34]
+    elif forcing == 'warm1':
+        z = [-5000,-700,-300,0]
+        Tz = [2.2,2.2,0,0]
+        Sz = [34.5,34.5,34,34]        
+    elif forcing == 'warm2':
+        z = [-5000,-700,-300,0]
+        Tz = [2.2,2.2,-1,-1]
+        Sz = [34.5,34.5,34,34]         
+    elif forcing == 'warm3':
+        z = [-5000,-500,-100,0]
+        Tz = [1.2,1.2,-1.0,-1.0]
+        Sz = [34.5,34.5,34,34]        
+        
+    Ta = np.interp(draft,z,Tz)
+    Sa = np.interp(draft,z,Sz) - 0.0002*draft  
+    
+    ds = xr.Dataset({'mask':(['y','x'], mask)}, coords={'x':x, 'y':y})    
+    ds['draft']   = (['y','x'], draft)
+    ds['Ta']      = (['y','x'], Ta)
+    ds['Sa']      = (['y','x'], Sa)
+    
+    return ds
