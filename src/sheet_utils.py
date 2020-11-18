@@ -75,11 +75,11 @@ def initialize_vars(self):
     self.S += 30 
 
     #Perform first integration step with 1 dt
-    self.D[2,:,:] = self.D[0,:,:] + self.dt * self.rhsD()
-    self.u[2,:,:] = self.u[0,:,:] + self.dt * self.rhsu()
-    self.v[2,:,:] = self.v[0,:,:] + self.dt * self.rhsv()
-    self.T[2,:,:] = self.T[0,:,:] + self.dt * self.rhsT()
-    self.S[2,:,:] = self.S[0,:,:] + self.dt * self.rhsS()
+    self.D[2,:,:] = self.D[0,:,:] + self.dt * rhsD(self)
+    self.u[2,:,:] = self.u[0,:,:] + self.dt * rhsu(self)
+    self.v[2,:,:] = self.v[0,:,:] + self.dt * rhsv(self)
+    self.T[2,:,:] = self.T[0,:,:] + self.dt * rhsT(self)
+    self.S[2,:,:] = self.S[0,:,:] + self.dt * rhsS(self)
 
     return
 
@@ -217,6 +217,73 @@ def convv(self):
 
     return (tN+tS+tE+tW) * self.vmask     
 
+"""Physical part below"""
+
+def drho(self):
+    """Linear equation of state. delta rho/rho0"""
+    return (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:]))
+    
+def entr(self):
+    """Entrainment """   
+    return self.E0*(np.abs(im(self.u[1,:,:])*self.dzdx + jm(self.v[1,:,:])*self.dzdy)) * self.tmask
+    
+def melt(self):
+    """Melt"""       
+    return self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
+    
+def rhsD(self):
+    """right hand side of d/dt D"""
+    t1 = convT(self,self.D[1,:,:])
+    t2 = melt(self)
+    t3 = entr(self)
+    t4 = self.Ddiff*lap(self)
+    t5 = np.maximum(self.minD-self.D[1,:,:],0)**2/(.5*self.minD*self.tres)
+        
+    return (t1+t2+t3+t4+t5) * self.tmask
+
+def rhsu(self):
+    """right hand side of d/dt u"""
+    t1 = -self.u[1,:,:] * ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
+    t2 = convu(self)
+    t3 = -self.g*ip_(drho(self)*self.D[1,:,:],self.tmask)*(self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False)
+    t4 = self.g*ip_(drho(self)*self.D[1,:,:]*self.dzdx,self.tmask)
+    t5 = -.5*self.g*ip_(self.D[1,:,:],self.tmask)**2*(drho(self).roll(x=-1,roll_coords=False)-drho(self))/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
+    t6 =  self.f*ip_(self.D[1,:,:]*jm_(self.v[1,:,:],self.vmask),self.tmask)
+    t7 = -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5
+    t8 = self.Ah*lapu(self)
+    
+    return ((t1+t2+t3+t4+t5+t6+t7+t8)/ip_(self.D[1,:,:],self.tmask)).fillna(0) * self.umask
+
+def rhsv(self):
+    """right hand side of d/dt v"""
+    t1 = -self.v[1,:,:] * jp_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt) 
+    t2 = convv(self)
+    t3 = -self.g*jp_(drho(self)*self.D[1,:,:],self.tmask)*(self.D[1,:,:].roll(y=-1,roll_coords=False)-self.D[1,:,:])/self.dy * self.tmask*self.tmask.roll(y=-1,roll_coords=False)
+    t4 = self.g*jp_(drho(self)*self.D[1,:,:]*self.dzdy,self.tmask)
+    t5 = -.5*self.g*jp_(self.D[1,:,:],self.tmask)**2*(drho(self).roll(y=-1,roll_coords=False)-drho(self))/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False)
+    t6 = -self.f*jp_(self.D[1,:,:]*im_(self.u[1,:,:],self.umask),self.tmask)
+    t7 = -self.Cd*self.v[1,:,:]*(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5
+    t8 = self.Ah*lapv(self)
+        
+    return ((t1+t2+t3+t4+t5+t6+t7+t8)/jp_(self.D[1,:,:],self.tmask)).fillna(0) * self.vmask
+    
+def rhsT(self):
+    """right hand side of d/dt T"""
+    t1 = -self.T[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
+    t2 =  convT(self,self.D[1,:,:]*self.T[1,:,:])
+    t3 =  entr(self)*self.Ta
+    t4 =  melt(self)*(self.Tf - self.L/self.cp)
+    t5 =  self.Kh*lapT(self,self.T[0,:,:])
+    return ((t1+t2+t3+t4+t5)/self.D[1,:,:]).fillna(0) * self.tmask
+def rhsS(self):
+    """right hand side of d/dt S"""
+    t1 = -self.S[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
+    t2 =  convT(self,self.D[1,:,:]*self.S[1,:,:])
+    t3 =  entr(self)*self.Sa
+    t4 =  self.Kh*lapT(self,self.S[0,:,:])
+    
+    return ((t1+t2+t3+t4)/self.D[1,:,:]).fillna(0) * self.tmask
+
 def updatevar(self,var):
     """Rearrange variable arrays at the start of each time step"""
     var[0,:,:] = var[1,:,:]
@@ -256,13 +323,12 @@ def plotpanels(self):
             
     addpanel(self,ax[0,1],self.D[1,:,:],'cmo.rain','Plume thickness',symm=False)
     addpanel(self,ax[1,1],self.zb,'cmo.deep_r','Ice draft',symm=False,stream=True)
-    #addpanel(self,ax[1,1],self.drho(),'RdBu_r','d rho')
             
     addpanel(self,ax[0,2],self.T[1,:,:],'cmo.thermal','Plume temperature',symm=False)          
     addpanel(self,ax[1,2],self.S[1,:,:],'cmo.haline','Plume salinity',symm=False)              
             
-    addpanel(self,ax[0,3],3600*24*365.25*self.melt(),'cmo.curl','Melt')
-    addpanel(self,ax[1,3],3600*24*365.25*self.entr(),'cmo.turbid','Entraiment',symm=False)                
+    addpanel(self,ax[0,3],3600*24*365.25*melt(self),'cmo.curl','Melt')
+    addpanel(self,ax[1,3],3600*24*365.25*entr(self),'cmo.turbid','Entraiment',symm=False)                
 
     plt.tight_layout()
     plt.show()
@@ -274,9 +340,9 @@ def plotdudt(self):
     
     t1 = -self.u[1,:,:] * ip_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt)
     t2 = convu(self)
-    t3 = -self.g*ip_(self.drho()*self.D[1,:,:],self.tmask)*(self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False)
-    t4 = self.g*ip_(self.drho()*self.D[1,:,:]*self.dzdx,self.tmask)
-    t5 = -.5*self.g*ip_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(x=-1,roll_coords=False)-self.drho())/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
+    t3 = -self.g*ip_(drho(self)*self.D[1,:,:],self.tmask)*(self.D[1,:,:].roll(x=-1,roll_coords=False)-self.D[1,:,:])/self.dx * self.tmask*self.tmask.roll(x=-1,roll_coords=False)
+    t4 = self.g*ip_(drho(self)*self.D[1,:,:]*self.dzdx,self.tmask)
+    t5 = -.5*self.g*ip_(self.D[1,:,:],self.tmask)**2*(drho(self).roll(x=-1,roll_coords=False)-drho(self))/self.dx * self.tmask * self.tmask.roll(x=-1,roll_coords=False)
     t6 =  self.f*ip_(self.D[1,:,:]*jm_(self.v[1,:,:],self.vmask),self.tmask)
     t7 = -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5
     t8 = self.Ah*lapu(self)
@@ -306,9 +372,9 @@ def plotdvdt(self):
     
     t1 = -self.v[1,:,:] * jp_((self.D[2,:,:]-self.D[0,:,:]),self.tmask)/(2*self.dt) 
     t2 = convv(self)
-    t3 = -self.g*jp_(self.drho()*self.D[1,:,:],self.tmask)*(self.D[1,:,:].roll(y=-1,roll_coords=False)-self.D[1,:,:])/self.dy * self.tmask*self.tmask.roll(y=-1,roll_coords=False)
-    t4 = self.g*jp_(self.drho()*self.D[1,:,:]*self.dzdy,self.tmask)
-    t5 = -.5*self.g*jp_(self.D[1,:,:],self.tmask)**2*(self.drho().roll(y=-1,roll_coords=False)-self.drho())/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False) 
+    t3 = -self.g*jp_(drho(self)*self.D[1,:,:],self.tmask)*(self.D[1,:,:].roll(y=-1,roll_coords=False)-self.D[1,:,:])/self.dy * self.tmask*self.tmask.roll(y=-1,roll_coords=False)
+    t4 = self.g*jp_(drho(self)*self.D[1,:,:]*self.dzdy,self.tmask)
+    t5 = -.5*self.g*jp_(self.D[1,:,:],self.tmask)**2*(drho(self).roll(y=-1,roll_coords=False)-drho(self))/self.dy * self.tmask * self.tmask.roll(y=-1,roll_coords=False) 
     t6 = -self.f*jp_(self.D[1,:,:]*im_(self.u[1,:,:],self.umask),self.tmask)
     t7 = -self.Cd*self.v[1,:,:]*(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5
     t8 = self.Ah*lapv(self)
@@ -338,7 +404,7 @@ def plotdSdt(self):
     
     t1 = -self.S[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
     t2 =  convT(self,self.D[1,:,:]*self.S[1,:,:])
-    t3 =  self.entr()*self.Sa
+    t3 =  entr(self)*self.Sa
     t4 =  self.Kh*lapT(self,self.S[0,:,:])
     
     tt = t1+t2+t3+t4
@@ -358,8 +424,8 @@ def plotdDdt(self):
     fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)     
     
     t1 = convT(self,self.D[1,:,:])
-    t2 = self.melt()
-    t3 = self.entr()
+    t2 = melt(self)
+    t3 = entr(self)
     t4 = self.Ddiff*lap(self)
     t5 = np.maximum(self.minD-self.D[1,:,:],0)/self.tres
     
