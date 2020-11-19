@@ -59,8 +59,9 @@ class SheetModel(ModelConstants):
         self.Kh = 500         # Diffusivity [m^2/s]
         
         #Some parameters for displaying output
-        self.diagint = 30     # Timestep at which to print diagnostics
+        self.diagint = 100    # Timestep at which to print diagnostics
         self.figsize = (15,10)
+        self.verbose = True
     
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
@@ -82,11 +83,11 @@ class SheetModel(ModelConstants):
                 
     def updatevars(self):
         """Update temporary variables"""
-        self.D = self.D.roll(n=-1,roll_coords=False)
-        self.u = self.u.roll(n=-1,roll_coords=False)
-        self.v = self.v.roll(n=-1,roll_coords=False)
-        self.T = self.T.roll(n=-1,roll_coords=False)
-        self.S = self.S.roll(n=-1,roll_coords=False)
+        self.D = np.roll(self.D,-1,axis=0)
+        self.u = np.roll(self.u,-1,axis=0)
+        self.v = np.roll(self.v,-1,axis=0)
+        self.T = np.roll(self.T,-1,axis=0)
+        self.S = np.roll(self.S,-1,axis=0)
         su.updatesecondary(self)
         return
     
@@ -96,7 +97,6 @@ class SheetModel(ModelConstants):
 
     def plotdiags(self):
         su.plotdudt(self)
-        #su.plotdvdt(self)
         su.plotdSdt(self)
         su.plotdDdt(self)
         return
@@ -112,17 +112,25 @@ class SheetModel(ModelConstants):
             self.timefilter()
             if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 su.printdiags(self)
-    
-        print('-----------------------------')
-        print(f'Run completed, final values:')
-        su.printdiags(self)
-        print('-----------------------------')
-        print('-----------------------------')
+        if self.verbose:
+            print('-----------------------------')
+            print(f'Run completed, final values:')
+            su.printdiags(self)
+            print('-----------------------------')
+            print('-----------------------------')
+        
         #Output
+
+        u = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='U')
+        v = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='V')
+        D = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='D')
+        T = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='T')
+        S = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='S')
+        
         melt = xr.DataArray(self.melt,dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
         entr = xr.DataArray(self.entr,dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
-        mav  = xr.DataArray(3600*24*365.25*((self.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()).values,name='mav')
+        mav  = xr.DataArray(3600*24*365.25*(self.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum(),name='mav')
         
-        ds = xr.merge([self.D[1,:,:],self.u[1,:,:],self.v[1,:,:],self.T[1,:,:],self.S[1,:,:],melt,entr,mav])
+        ds = xr.merge([u,v,D,T,S,melt,entr,mav])
     
         return ds
