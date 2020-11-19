@@ -63,9 +63,8 @@ def initialize_vars(self):
     self.S = xr.DataArray(np.zeros((3,self.ny,self.nx)),dims=['n','y','x'],coords={'y':self.y,'x':self.x},name='S')
 
     #Draft dz/dx and dz/dy on t-grid
-    "Can be replaced by np.gradient for clarity"
-    self.dzdx = ddxT_e(self,self.zb)
-    self.dzdy = ddyT_e(self,self.zb)
+    self.dzdx = np.gradient(self.zb,self.dx.values,axis=1)
+    self.dzdy = np.gradient(self.zb,self.dy.values,axis=0)
     
     #Local freezing point [degC]
     self.Tf = self.l1*self.Sa+self.l2+self.l3*self.zb
@@ -84,18 +83,6 @@ def initialize_vars(self):
     self.S[2,:,:] = self.S[0,:,:] + self.dt * rhsS(self)
 
     return
-
-def ddxT_e(self,var):
-    """Computes d/dx at tgrid, extrapolating gradients outside valid area. Specific for gradient in draft at boundaries """
-    t1 = (var.roll(x=-1,roll_coords=False) - var)*self.tmask.roll(x=-1,roll_coords=False)
-    t2 = (var - var.roll(x= 1,roll_coords=False))*self.tmask.roll(x= 1,roll_coords=False)
-    return ((t1+t2)/((self.tmask.roll(x=-1,roll_coords=False)+self.tmask.roll(x=1,roll_coords=False))*self.dx)).fillna(0)# * self.tmask
-
-def ddyT_e(self,var):
-    """Computes d/dy at tgrid, extrapolating gradients outside valid area. Specific for gradient in draft at boundaries """
-    t1 = (var.roll(y=-1,roll_coords=False) - var)*self.tmask.roll(y=-1,roll_coords=False)
-    t2 = (var - var.roll(y= 1,roll_coords=False))*self.tmask.roll(y= 1,roll_coords=False)
-    return ((t1+t2)/((self.tmask.roll(y=-1,roll_coords=False)+self.tmask.roll(y=1,roll_coords=False))*self.dy)).fillna(0)# * self.tmask
 
 def im(var):
     """Value at i-1/2 """
