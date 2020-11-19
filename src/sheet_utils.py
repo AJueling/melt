@@ -30,6 +30,8 @@ def create_mask(self):
     self.umask = (self.tmask+self.isfW)*(1-self.grlE.roll(x=-1,roll_coords=False))
     self.vmask = (self.tmask+self.isfS)*(1-self.grlN.roll(y=-1,roll_coords=False))
     
+    "Also extract all rolled masks"
+    
     return
 
 def create_grid(self):   
@@ -70,7 +72,7 @@ def initialize_vars(self):
         
     #Initial values
     "Replace by optional spinup fields"
-    self.D += 10
+    self.D += .1
     self.T += self.Tf 
     self.S += 30 
 
@@ -154,10 +156,10 @@ def lapu(self):
     Dcent = ip_(self.D[0,:,:],self.tmask)
     var = self.u[0,:,:]
 
-    tN = jp_(Dcent,self.tmask)*(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y=-1,roll_coords=False))/self.dy**2
-    tS = jm_(Dcent,self.tmask)*(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y= 1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y= 1,roll_coords=False))/self.dy**2  
-    tE = self.D[0,:,:].roll(x=-1,roll_coords=False)   *(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False)
-    tW = self.D[0,:,:]                                *(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn)
+    tN = jp_(Dcent,self.tmask)                      *(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y=-1,roll_coords=False))/self.dy**2
+    tS = jm_(Dcent,self.tmask)                      *(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y= 1,roll_coords=False) - self.slip*Dcent*var*ip(self.grd.roll(y= 1,roll_coords=False))/self.dy**2  
+    tE = self.D[0,:,:].roll(x=-1,roll_coords=False) *(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False)
+    tW = self.D[0,:,:]                              *(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn)
     return (tN+tS+tE+tW) * self.umask
 
 def lapv(self):
@@ -165,18 +167,26 @@ def lapv(self):
     Dcent = jp_(self.D[0,:,:],self.tmask)
     var = self.v[0,:,:]
     
-    tN = self.D[0,:,:].roll(y=-1,roll_coords=False)   *(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) 
-    tS = self.D[0,:,:]                                *(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn)
-    tE = ip_(Dcent,self.tmask)*(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x=-1,roll_coords=False))/self.dx**2
-    tW = im_(Dcent,self.tmask)*(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x= 1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x= 1,roll_coords=False))/self.dx**2  
+    tN = self.D[0,:,:].roll(y=-1,roll_coords=False) *(var.roll(y=-1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn).roll(y=-1,roll_coords=False) 
+    tS = self.D[0,:,:]                              *(var.roll(y= 1,roll_coords=False)-var)/self.dy**2 * (1-self.ocn)
+    tE = ip_(Dcent,self.tmask)                      *(var.roll(x=-1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x=-1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x=-1,roll_coords=False))/self.dx**2
+    tW = im_(Dcent,self.tmask)                      *(var.roll(x= 1,roll_coords=False)-var)/self.dx**2 * (1-self.ocn).roll(x= 1,roll_coords=False) - self.slip*Dcent*var*jp(self.grd.roll(x= 1,roll_coords=False))/self.dx**2  
     return (tN+tS+tE+tW) * self.vmask
 
-def convT(self,var):
-    """Upstream biased convergence for D, DT, DS"""
-    tN = - (np.maximum(self.v[1,:,:],0)*var + np.minimum(self.v[1,:,:],0)*var.roll(y=-1,roll_coords=False)) / self.dy * self.vmask
-    tS =   (np.maximum(self.v[1,:,:].roll(y=1,roll_coords=False),0)*var.roll(y=1,roll_coords=False) + np.minimum(self.v[1,:,:].roll(y=1,roll_coords=False),0)*var) / self.dy * self.vmask.roll(y=1,roll_coords=False)
-    tE = - (np.maximum(self.u[1,:,:],0)*var + np.minimum(self.u[1,:,:],0)*var.roll(x=-1,roll_coords=False)) / self.dx * self.umask
-    tW =   (np.maximum(self.u[1,:,:].roll(x=1,roll_coords=False),0)*var.roll(x=1,roll_coords=False) + np.minimum(self.u[1,:,:].roll(x=1,roll_coords=False),0)*var) / self.dx * self.umask.roll(x=1,roll_coords=False)
+def convTups(self,var):
+    """Upstream convergence scheme for D, DT, DS"""
+    tN = - (np.maximum(self.v[1,:,:],0)*var                                                         + np.minimum(self.v[1,:,:],0)                            *var.roll(y=-1,roll_coords=False)) / self.dy * self.vmask
+    tS =   (np.maximum(self.v[1,:,:].roll(y=1,roll_coords=False),0)*var.roll(y=1,roll_coords=False) + np.minimum(self.v[1,:,:].roll(y=1,roll_coords=False),0)*var)                              / self.dy * self.vmask.roll(y=1,roll_coords=False)
+    tE = - (np.maximum(self.u[1,:,:],0)*var                                                         + np.minimum(self.u[1,:,:],0)                            *var.roll(x=-1,roll_coords=False)) / self.dx * self.umask
+    tW =   (np.maximum(self.u[1,:,:].roll(x=1,roll_coords=False),0)*var.roll(x=1,roll_coords=False) + np.minimum(self.u[1,:,:].roll(x=1,roll_coords=False),0)*var)                              / self.dx * self.umask.roll(x=1,roll_coords=False)
+    return (tN+tS+tE+tW) * self.tmask
+
+def convTcen(self,var):
+    """Centered convergence scheme for D, T, and S"""
+    tN = -jp_(var,self.tmask)*self.v[1,:,:]                            /self.dy * self.vmask                             
+    tS =  jm_(var,self.tmask)*self.v[1,:,:].roll(y=1,roll_coords=False)/self.dy * self.vmask.roll(y=1,roll_coords=False) 
+    tE = -ip_(var,self.tmask)*self.u[1,:,:]                            /self.dx * self.umask                             
+    tW =  im_(var,self.tmask)*self.u[1,:,:].roll(x=1,roll_coords=False)/self.dx * self.umask.roll(x=1,roll_coords=False)
     return (tN+tS+tE+tW) * self.tmask
 
 def convu(self):
@@ -233,7 +243,7 @@ def melt(self):
     
 def rhsD(self):
     """right hand side of d/dt D"""
-    t1 = convT(self,self.D[1,:,:])
+    t1 = convTups(self,self.D[1,:,:])
     t2 = melt(self)
     t3 = entr(self)
     t4 = self.Ddiff*lap(self)
@@ -270,15 +280,16 @@ def rhsv(self):
 def rhsT(self):
     """right hand side of d/dt T"""
     t1 = -self.T[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
-    t2 =  convT(self,self.D[1,:,:]*self.T[1,:,:])
+    t2 =  convTups(self,self.D[1,:,:]*self.T[1,:,:])
     t3 =  entr(self)*self.Ta
     t4 =  melt(self)*(self.Tf - self.L/self.cp)
     t5 =  self.Kh*lapT(self,self.T[0,:,:])
     return ((t1+t2+t3+t4+t5)/self.D[1,:,:]).fillna(0) * self.tmask
+
 def rhsS(self):
     """right hand side of d/dt S"""
     t1 = -self.S[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
-    t2 =  convT(self,self.D[1,:,:]*self.S[1,:,:])
+    t2 =  convTups(self,self.D[1,:,:]*self.S[1,:,:])
     t3 =  entr(self)*self.Sa
     t4 =  self.Kh*lapT(self,self.S[0,:,:])
     
@@ -286,6 +297,7 @@ def rhsS(self):
 
 def updatevar(self,var):
     """Rearrange variable arrays at the start of each time step"""
+    "Can use roll along axis=0 instead"
     var[0,:,:] = var[1,:,:]
     var[1,:,:] = var[2,:,:]
     var[2,:,:] *= 0
@@ -325,7 +337,8 @@ def plotpanels(self):
     addpanel(self,ax[1,1],self.zb,'cmo.deep_r','Ice draft',symm=False,stream=True)
             
     addpanel(self,ax[0,2],self.T[1,:,:],'cmo.thermal','Plume temperature',symm=False)          
-    addpanel(self,ax[1,2],self.S[1,:,:],'cmo.haline','Plume salinity',symm=False)              
+    addpanel(self,ax[1,2],self.S[1,:,:],'cmo.haline','Plume salinity',symm=False)   
+    #addpanel(self,ax[1,2],drho(self),'cmo.dense','Buoyancy',symm=False)
             
     addpanel(self,ax[0,3],3600*24*365.25*melt(self),'cmo.curl','Melt')
     addpanel(self,ax[1,3],3600*24*365.25*entr(self),'cmo.turbid','Entraiment',symm=False)                
@@ -403,7 +416,7 @@ def plotdSdt(self):
     fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
     
     t1 = -self.S[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
-    t2 =  convT(self,self.D[1,:,:]*self.S[1,:,:])
+    t2 =  convTups(self,self.D[1,:,:]*self.S[1,:,:])
     t3 =  entr(self)*self.Sa
     t4 =  self.Kh*lapT(self,self.S[0,:,:])
     
@@ -423,7 +436,7 @@ def plotdSdt(self):
 def plotdDdt(self):
     fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)     
     
-    t1 = convT(self,self.D[1,:,:])
+    t1 = convTups(self,self.D[1,:,:])
     t2 = melt(self)
     t3 = entr(self)
     t4 = self.Ddiff*lap(self)
@@ -439,53 +452,6 @@ def plotdDdt(self):
 
     addpanel(self,ax[0,2],1e6*t4 * self.tmask,'RdBu_r','lap')
     addpanel(self,ax[1,2],1e6*t5 * self.tmask,'RdBu_r','restore')
-
-    plt.tight_layout()
-    plt.show()
-    
-def plotlapS(self):
-    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)  
-    
-    Dcent = self.D[0,:,:]
-    var = self.S[0,:,:]
-    
-    tN = jp_(Dcent,self.tmask)*(var.roll(y=-1,roll_coords=False)-var)*self.tmask.roll(y=-1,roll_coords=False)/self.dy**2
-    tS = jm_(Dcent,self.tmask)*(var.roll(y= 1,roll_coords=False)-var)*self.tmask.roll(y= 1,roll_coords=False)/self.dy**2
-    tE = ip_(Dcent,self.tmask)*(var.roll(x=-1,roll_coords=False)-var)*self.tmask.roll(x=-1,roll_coords=False)/self.dx**2
-    tW = im_(Dcent,self.tmask)*(var.roll(x= 1,roll_coords=False)-var)*self.tmask.roll(x= 1,roll_coords=False)/self.dx**2    
-
-    tt = tN+tS+tE+tW
-    
-    addpanel(self,ax[0,0],1e6*tt * self.tmask,'RdBu_r','lap')
-    addpanel(self,ax[1,0],1e6*tN * self.tmask,'RdBu_r','lap N')
-            
-    addpanel(self,ax[0,1],1e6*tS * self.tmask,'RdBu_r','lap S')
-    addpanel(self,ax[1,1],1e6*tE * self.tmask,'RdBu_r','lap E')
-
-    addpanel(self,ax[0,2],1e6*tW * self.tmask,'RdBu_r','lap W')
-
-    plt.tight_layout()
-    plt.show()
-
-def plotconvD(self):
-    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)
-    
-    var = self.D[1,:,:]
-    
-    tN = - (np.maximum(self.v[1,:,:],0)*var + np.minimum(self.v[1,:,:],0)*var.roll(y=-1,roll_coords=False)) / self.dy * self.vmask
-    tS =   (np.maximum(self.v[1,:,:].roll(y=1,roll_coords=False),0)*var.roll(y=1,roll_coords=False) + np.minimum(self.v[1,:,:].roll(y=1,roll_coords=False),0)*var) / self.dy * self.vmask.roll(y=1,roll_coords=False)
-    tE = - (np.maximum(self.u[1,:,:],0)*var + np.minimum(self.u[1,:,:],0)*var.roll(x=-1,roll_coords=False)) / self.dx * self.umask
-    tW =   (np.maximum(self.u[1,:,:].roll(x=1,roll_coords=False),0)*var.roll(x=1,roll_coords=False) + np.minimum(self.u[1,:,:].roll(x=1,roll_coords=False),0)*var) / self.dx * self.umask.roll(x=1,roll_coords=False)
-
-    tt = tN+tS+tE+tW
-    
-    addpanel(self,ax[0,0],1e6*tt * self.tmask,'RdBu_r','conv')
-    addpanel(self,ax[1,0],1e6*tN * self.tmask,'RdBu_r','conv N')
-            
-    addpanel(self,ax[0,1],1e6*tS * self.tmask,'RdBu_r','conv S')
-    addpanel(self,ax[1,1],1e6*tE * self.tmask,'RdBu_r','conv E')
-
-    addpanel(self,ax[0,2],1e6*tW * self.tmask,'RdBu_r','conv W')
 
     plt.tight_layout()
     plt.show()

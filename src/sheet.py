@@ -55,9 +55,9 @@ class SheetModel(ModelConstants):
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
         
-        self.Ah = 1000        # Only used if detect_Ah_dt = False
-        self.dt = 150         # Only used if detect_Ah_dt = False
-        self.Kh = 500         # Diffusivity for T and S
+        self.Ah = 500         # Laplacian viscosity [m^2/s]
+        self.dt = 150         # Time step [s]
+        self.Kh = 500         # Diffusivity [m^2/s]
         
         #Parameters to stabilise plume thickness
         self.minD = 0.10      # Thickness below which restoring is activated
@@ -66,7 +66,7 @@ class SheetModel(ModelConstants):
         
         #Some parameters for displaying output
         self.diagint = 30     # Timestep at which to print diagnostics
-        self.figsize = (15,8)
+        self.figsize = (15,10)
     
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
@@ -106,7 +106,7 @@ class SheetModel(ModelConstants):
         #Integrated entrainment [Sv]
         #diag7 = 1e-6*(self.entr()*self.dx*self.dy).sum().values
         #Integrated volume thickness convergence == net in/outflow [Sv]
-        diag8 = 1e-6*(su.convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum().values
+        diag8 = 1e-6*(su.convTups(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum().values
         #Maximum velocity [m/s]
         diag9 = ((su.im(self.u[1,:,:])**2 + su.jm(self.v[1,:,:])**2)**.5).max().values
         
@@ -132,7 +132,6 @@ class SheetModel(ModelConstants):
         #su.plotdvdt(self)
         su.plotdSdt(self)
         su.plotdDdt(self)
-        #su.plotconvD(self)
         return
     
     def compute(self):

@@ -169,8 +169,8 @@ def FavierTest(iceshelf,forcing):
         lx,ly = 4e4,4e4
         zdeep,zshallow = -1000,-200
     elif iceshelf == 'test':
-        lx,ly = 4e4,4e4
-        zdeep,zshallow = -1000,-800
+        lx,ly = 1e5,1e5
+        zdeep,zshallow = -1000,-500
         
     x = np.arange(0,lx,dx)
     y = np.arange(0,ly,dy)
