@@ -54,15 +54,9 @@ class SheetModel(ModelConstants):
         self.days = 6         # Total runtime in days
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
-        
         self.Ah = 500         # Laplacian viscosity [m^2/s]
         self.dt = 150         # Time step [s]
         self.Kh = 500         # Diffusivity [m^2/s]
-        
-        #Parameters to stabilise plume thickness
-        self.minD = 0.10      # Thickness below which restoring is activated
-        self.tres = 1e10      # Time scale of restoring. Set to ~ 900sec to use to prevent emptying of cell
-        self.Ddiff = 0        # Diffusion in thickness. Set to ~ 20 m2/s to use
         
         #Some parameters for displaying output
         self.diagint = 30     # Timestep at which to print diagnostics
@@ -70,12 +64,11 @@ class SheetModel(ModelConstants):
     
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
-        self.D[2,:,:] = self.D[0,:,:] + 2*self.dt * su.rhsD(self)
-        self.u[2,:,:] = self.u[0,:,:] + 2*self.dt * su.rhsu(self)
-        self.v[2,:,:] = self.v[0,:,:] + 2*self.dt * su.rhsv(self)
-        self.T[2,:,:] = self.T[0,:,:] + 2*self.dt * su.rhsT(self)
-        self.S[2,:,:] = self.S[0,:,:] + 2*self.dt * su.rhsS(self)         
-      
+        su.intD(self,2*self.dt)
+        su.intu(self,2*self.dt)
+        su.intv(self,2*self.dt)
+        su.intT(self,2*self.dt)
+        su.intS(self,2*self.dt)        
         return
     
     def timefilter(self):
@@ -86,41 +79,15 @@ class SheetModel(ModelConstants):
         self.T[1,:,:] += self.nu/2 * (self.T[0,:,:]+self.T[2,:,:]-2*self.T[1,:,:]) * self.tmask
         self.S[1,:,:] += self.nu/2 * (self.S[0,:,:]+self.S[2,:,:]-2*self.S[1,:,:]) * self.tmask
         return
-    
-    def printdiags(self):
-        """Print diagnostics at given intervals as defined below"""
-        #Maximum thickness
-        diag0 = (self.D[1,:,:]*self.tmask).max().values
-        #Average thickness [m]
-        diag1 = ((self.D[1,:,:]*self.tmask*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()).values
-        #Maximum melt rate [m/yr]
-        diag2 = 3600*24*365.25*su.melt(self).max().values
-        #Average melt rate [m/yr]
-        diag3 = 3600*24*365.25*((su.melt(self)*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()).values
-        #Minimum thickness
-        diag4 = xr.where(self.tmask==0,100,self.D[1,:,:]).min().values
-        #Volume tendency [Sv]
-        #diag5 = 1e-6*((self.D[2,:,:]-self.D[0,:,:])*self.tmask*self.dx*self.dy).sum()/2/self.dt.values
-        #Integrated melt flux [Sv]
-        #diag6 = 1e-6*(self.melt()*self.dx*self.dy).sum().values
-        #Integrated entrainment [Sv]
-        #diag7 = 1e-6*(self.entr()*self.dx*self.dy).sum().values
-        #Integrated volume thickness convergence == net in/outflow [Sv]
-        diag8 = 1e-6*(su.convTups(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum().values
-        #Maximum velocity [m/s]
-        diag9 = ((su.im(self.u[1,:,:])**2 + su.jm(self.v[1,:,:])**2)**.5).max().values
-        
-        print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag8:.03f} Sv | Max. vel: {diag9:.03f} m/s')
-                  
-        return
                 
     def updatevars(self):
         """Update temporary variables"""
-        su.updatevar(self,self.D)
-        su.updatevar(self,self.u)
-        su.updatevar(self,self.v)
-        su.updatevar(self,self.T)
-        su.updatevar(self,self.S) 
+        self.D = self.D.roll(n=-1,roll_coords=False)
+        self.u = self.u.roll(n=-1,roll_coords=False)
+        self.v = self.v.roll(n=-1,roll_coords=False)
+        self.T = self.T.roll(n=-1,roll_coords=False)
+        self.S = self.S.roll(n=-1,roll_coords=False)
+        su.updatesecondary(self)
         return
     
     def plotfields(self):
@@ -144,17 +111,17 @@ class SheetModel(ModelConstants):
             self.integrate()
             self.timefilter()
             if self.t in np.arange(self.diagint,self.nt,self.diagint):
-                self.printdiags()
+                su.printdiags(self)
     
         print('-----------------------------')
         print(f'Run completed, final values:')
-        self.printdiags()
+        su.printdiags(self)
         print('-----------------------------')
         print('-----------------------------')
         #Output
-        melt = xr.DataArray(su.melt(self),dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
-        entr = xr.DataArray(su.entr(self),dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
-        mav  = xr.DataArray(3600*24*365.25*((su.melt(self)*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()).values,name='mav')
+        melt = xr.DataArray(self.melt,dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
+        entr = xr.DataArray(self.entr,dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
+        mav  = xr.DataArray(3600*24*365.25*((self.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()).values,name='mav')
         
         ds = xr.merge([self.D[1,:,:],self.u[1,:,:],self.v[1,:,:],self.T[1,:,:],self.S[1,:,:],melt,entr,mav])
     
