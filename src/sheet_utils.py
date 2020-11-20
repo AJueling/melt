@@ -76,11 +76,11 @@ def create_grid(self):
 
 def initialize_vars(self):
     #Major variables. Three arrays for storage of previous timestep, current timestep, and next timestep
-    self.u = np.zeros((3,self.ny,self.nx))
-    self.v = np.zeros((3,self.ny,self.nx))
-    self.D = np.zeros((3,self.ny,self.nx))
-    self.T = np.zeros((3,self.ny,self.nx))
-    self.S = np.zeros((3,self.ny,self.nx))
+    self.u = np.zeros((3,self.ny,self.nx)).astype('float64')
+    self.v = np.zeros((3,self.ny,self.nx)).astype('float64')
+    self.D = np.zeros((3,self.ny,self.nx)).astype('float64')
+    self.T = np.zeros((3,self.ny,self.nx)).astype('float64')
+    self.S = np.zeros((3,self.ny,self.nx)).astype('float64')
 
     #Draft dz/dx and dz/dy on t-grid
     self.dzdx = np.gradient(self.zb,self.dx,axis=1)
@@ -345,11 +345,13 @@ def printdiags(self):
 
 """Functions for plotting below"""
 
-def addpanel(self,dax,var,cmap,title,symm=True,stream=False):
+def addpanel(self,dax,var,cmap,title,symm=True,stream=False,log=False):
     x = np.append(self.x.values,self.x[-1].values+self.dx)-self.dx/2
     y = np.append(self.y.values,self.y[-1].values+self.dy)-self.dy/2
     dax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-1,vmax=3.5) 
 
+    if log:
+        var = np.log10(var,out=np.zeros_like(var), where=var>0)
     if symm:
         IM = dax.pcolormesh(x,y,xr.where(self.tmask,var,np.nan),cmap=plt.get_cmap(cmap),vmax=np.max(np.abs(var)),vmin=-np.max(np.abs(var)))
     else:
@@ -358,8 +360,8 @@ def addpanel(self,dax,var,cmap,title,symm=True,stream=False):
     plt.colorbar(IM,ax=dax,orientation='horizontal')
     if stream:
         spd = ((im(self.u[1,:,:]*self.umask)**2 + jm(self.v[1,:,:]*self.vmask)**2)**.5)
-        lw = 2*spd/spd.max()
-        strm = dax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='w',density=4)
+        lw = 3*spd/spd.max()
+        strm = dax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='teal',density=[.5,5],arrowsize=.5)
                               
     dax.set_title(title)
     dax.set_aspect('equal', adjustable='box')
@@ -371,7 +373,7 @@ def plotpanels(self):
     addpanel(self,ax[0,0],self.u[1,:,:],'cmo.balance','U velocity')
     addpanel(self,ax[1,0],self.v[1,:,:],'cmo.balance','V velocity')
             
-    addpanel(self,ax[0,1],self.D[1,:,:],'cmo.rain','Plume thickness',symm=False)
+    addpanel(self,ax[0,1],self.D[1,:,:],'cmo.rain','Plume thickness',symm=False,log=True)
     addpanel(self,ax[1,1],self.zb,'cmo.deep_r','Ice draft',symm=False,stream=True)
     #addpanel(self,ax[1,1],self.dzdx,'cmo.deep_r','Draft slope',symm=False,stream=False)
         
@@ -379,7 +381,7 @@ def plotpanels(self):
     addpanel(self,ax[1,2],self.S[1,:,:],'cmo.haline','Plume salinity',symm=False)   
     #addpanel(self,ax[1,2],self.drho,'cmo.dense','Buoyancy',symm=False)
             
-    addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True)
+    addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True,stream=True)
     addpanel(self,ax[1,3],3600*24*365.25*self.entr,'cmo.turbid','Entraiment',symm=False)                
 
     plt.tight_layout()
