@@ -101,6 +101,10 @@ class SheetModel(ModelConstants):
         su.plotdDdt(self)
         return
     
+    def plotmelt(self):
+        su.plotmelt(self)
+        return
+    
     def compute(self):
         su.create_mask(self)
         su.create_grid(self)

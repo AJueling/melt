@@ -358,8 +358,8 @@ def addpanel(self,dax,var,cmap,title,symm=True,stream=False):
     plt.colorbar(IM,ax=dax,orientation='horizontal')
     if stream:
         spd = ((im(self.u[1,:,:]*self.umask)**2 + jm(self.v[1,:,:]*self.vmask)**2)**.5)
-        lw = 3*spd/spd.max()
-        strm = dax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='w')
+        lw = 2*spd/spd.max()
+        strm = dax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='w',density=4)
                               
     dax.set_title(title)
     dax.set_aspect('equal', adjustable='box')
@@ -379,7 +379,7 @@ def plotpanels(self):
     addpanel(self,ax[1,2],self.S[1,:,:],'cmo.haline','Plume salinity',symm=False)   
     #addpanel(self,ax[1,2],self.drho,'cmo.dense','Buoyancy',symm=False)
             
-    addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.curl','Melt')
+    addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True)
     addpanel(self,ax[1,3],3600*24*365.25*self.entr,'cmo.turbid','Entraiment',symm=False)                
 
     plt.tight_layout()
@@ -479,3 +479,12 @@ def plotextra(self):
             
     addpanel(self,ax[0,1],1e6*tE,'RdBu_r','E')
     addpanel(self,ax[1,1],1e6*tW,'RdBu_r','W')
+    
+def plotmelt(self):
+    fig,ax = plt.subplots(1,1,figsize=(15,15))            
+            
+    addpanel(self,ax,3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True,stream=True)
+
+    plt.tight_layout()
+    plt.savefig('../../results/sheetmelt.png')
+    plt.show()

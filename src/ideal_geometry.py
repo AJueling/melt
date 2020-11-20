@@ -157,8 +157,8 @@ class IdealGeometry(object):
         ds.grl_adv.attrs = {'long_name':'advected grounding line depth / plume origin depth', 'units':'m'}
         return ds
     
-def FavierTest(iceshelf,forcing):
-    dx,dy = 2e3,2e3
+def FavierTest(iceshelf,forcing,dx=2e3):
+    dy=dx
     if iceshelf == 'fris':
         lx,ly = 7e5,7e5
         zdeep,zshallow = -1000,0
@@ -171,6 +171,8 @@ def FavierTest(iceshelf,forcing):
     elif iceshelf == 'test':
         lx,ly = 1e5,1e5
         zdeep,zshallow = -1000,-500
+    elif iceshelf == 'test2':
+        lx,ly = 1e5,6e4
         
     x = np.arange(0,lx,dx)
     y = np.arange(0,ly,dy)
@@ -184,7 +186,13 @@ def FavierTest(iceshelf,forcing):
         mask[0,:] = 2
         mask[-1,:] = 2
     mask[:,-1] = 0
-    draft, _ = np.meshgrid(np.linspace(zdeep,zshallow,nx), np.ones((ny)))
+    
+    if iceshelf == 'test2':
+        xx, yy = np.meshgrid(np.linspace(1,0,nx), np.linspace(0,np.pi,ny))
+        curv = 250
+        draft = -500-((500-curv)+curv*np.sin(yy)**2)*xx
+    else:
+        draft, _ = np.meshgrid(np.linspace(zdeep,zshallow,nx), np.ones((ny)))
     
     if forcing == 'cold0':
         z = [-5000,-700,-300,0]
@@ -212,7 +220,7 @@ def FavierTest(iceshelf,forcing):
         Sz = [34.5,34.5,34,34]        
         
     Ta = np.interp(draft,z,Tz)
-    Sa = np.interp(draft,z,Sz) - 0.0002*draft  
+    Sa = np.interp(draft,z,Sz) - 0.0002*draft
     
     ds = xr.Dataset({'mask':(['y','x'], mask)}, coords={'x':x, 'y':y})    
     ds['draft']   = (['y','x'], draft)
