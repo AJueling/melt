@@ -54,9 +54,9 @@ class SheetModel(ModelConstants):
         self.days = 6         # Total runtime in days
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
-        self.Ah = 500         # Laplacian viscosity [m^2/s]
-        self.dt = 150         # Time step [s]
-        self.Kh = 500         # Diffusivity [m^2/s]
+        self.Ah = 200         # Laplacian viscosity [m^2/s]
+        self.dt = 30          # Time step [s]
+        self.Kh = 50          # Diffusivity [m^2/s]
         
         #Some parameters for displaying output
         self.diagint = 100    # Timestep at which to print diagnostics
@@ -96,13 +96,14 @@ class SheetModel(ModelConstants):
         return
 
     def plotdiags(self):
-        su.plotdudt(self)
-        su.plotdSdt(self)
         su.plotdDdt(self)
+        su.plotdudt(self)
+        su.plotdTdt(self)
+        su.plotdSdt(self)
         return
     
-    def plotmelt(self):
-        su.plotmelt(self)
+    def plotmelt(self,figsize=(15,15)):
+        su.plotmelt(self,figsize=figsize)
         return
     
     def compute(self):
@@ -114,6 +115,7 @@ class SheetModel(ModelConstants):
             self.updatevars()
             self.integrate()
             self.timefilter()
+            self.D = np.where(self.D<1.,1.,self.D)
             if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 su.printdiags(self)
         if self.verbose:

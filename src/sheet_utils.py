@@ -1,5 +1,6 @@
 import numpy as np
 import xarray as xr
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import cmocean as cmo
 
@@ -91,9 +92,9 @@ def initialize_vars(self):
         
     #Initial values
     "Replace by optional spinup fields"
-    self.D += .1
+    self.D += 1.5
     self.T += self.Tf
-    self.S += 30 
+    self.S += 33
 
     #Perform first integration step with 1 dt
     updatesecondary(self)
@@ -103,7 +104,6 @@ def initialize_vars(self):
     intT(self,self.dt)
     intS(self,self.dt)
     return
-
 
 def div0(a,b):
     return np.divide(a,b,out=np.zeros_like(a), where=b!=0)
@@ -139,7 +139,6 @@ def jm_t(self,var):
 def jp_t(self,var):
     """Value at j+1/2, no gradient across boundary"""
     return div0((var*self.tmask + np.roll(var*self.tmask,-1,axis=0)),self.tmask+self.tmaskym1)
-
 
 def im_(var,mask):
     """Value at i-1/2, no gradient across boundary"""
@@ -193,10 +192,20 @@ def lapv(self):
 
 def convT(self,var):
     """Upstream convergence scheme for D, DT, DS"""
+    #tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*(np.roll(var,-1,axis=0)*self.tmaskym1 + var*self.ocnym1)) / self.dy * self.vmask
+    #tS =   (np.maximum(self.vyp1    ,0)*(np.roll(var,1,axis=0)*self.tmaskyp1 + var*self.ocnyp1) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
+    #tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*(np.roll(var,-1,axis=1)*self.tmaskxm1 + var*self.ocnxm1)) / self.dx * self.umask
+    #tW =   (np.maximum(self.uxp1    ,0)*(np.roll(var,1,axis=1)*self.tmaskxp1 + var*self.ocnxp1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
+
     tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*np.roll(var,-1,axis=0)) / self.dy * self.vmask
     tS =   (np.maximum(self.vyp1    ,0)*np.roll(var,1,axis=0) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
     tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*np.roll(var,-1,axis=1)) / self.dx * self.umask
     tW =   (np.maximum(self.uxp1    ,0)*np.roll(var,1,axis=1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
+
+    #tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*np.roll(var*self.tmask,-1,axis=0)) / self.dy * self.vmask
+    #tS =   (np.maximum(self.vyp1    ,0)*np.roll(var*self.tmask,1,axis=0) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
+    #tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*np.roll(var*self.tmask,-1,axis=1)) / self.dx * self.umask
+    #tW =   (np.maximum(self.uxp1    ,0)*np.roll(var*self.tmask,1,axis=1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
     
     return (tN+tS+tE+tW) * self.tmask
 
@@ -265,7 +274,8 @@ def intD(self,delt):
                     +  self.melt \
                     +  self.entr \
                     ) * self.tmask * delt
-    
+
+
 def intu(self,delt):
     """Integrate u"""
     self.u[2,:,:] = self.u[0,:,:] \
@@ -345,23 +355,24 @@ def printdiags(self):
 
 """Functions for plotting below"""
 
-def addpanel(self,dax,var,cmap,title,symm=True,stream=False,log=False):
+def addpanel(self,dax,var,cmap,title,symm=True,stream=None,density=1,log=False):
     x = np.append(self.x.values,self.x[-1].values+self.dx)-self.dx/2
     y = np.append(self.y.values,self.y[-1].values+self.dy)-self.dy/2
-    dax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-1,vmax=3.5) 
+    dax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-2.5,vmax=5) 
 
     if log:
-        var = np.log10(var,out=np.zeros_like(var), where=var>0)
-    if symm:
+        vvar = np.ma.masked_where(var<=0,var)
+        IM = dax.pcolormesh(x,y,xr.where(self.tmask,vvar,np.nan),cmap=plt.get_cmap(cmap),norm=mpl.colors.LogNorm())
+    elif symm:
         IM = dax.pcolormesh(x,y,xr.where(self.tmask,var,np.nan),cmap=plt.get_cmap(cmap),vmax=np.max(np.abs(var)),vmin=-np.max(np.abs(var)))
     else:
         IM = dax.pcolormesh(x,y,xr.where(self.tmask,var,np.nan),cmap=plt.get_cmap(cmap))
           
     plt.colorbar(IM,ax=dax,orientation='horizontal')
-    if stream:
+    if stream is not None:
         spd = ((im(self.u[1,:,:]*self.umask)**2 + jm(self.v[1,:,:]*self.vmask)**2)**.5)
         lw = 3*spd/spd.max()
-        strm = dax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='teal',density=[.5,5],arrowsize=.5)
+        strm = dax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color=stream,density=density,arrowsize=.5)
                               
     dax.set_title(title)
     dax.set_aspect('equal', adjustable='box')
@@ -370,18 +381,21 @@ def addpanel(self,dax,var,cmap,title,symm=True,stream=False,log=False):
 def plotpanels(self):
     fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
     
-    addpanel(self,ax[0,0],self.u[1,:,:],'cmo.balance','U velocity')
-    addpanel(self,ax[1,0],self.v[1,:,:],'cmo.balance','V velocity')
-            
+    addpanel(self,ax[0,0],(self.u[1,:,:]**2+self.v[1,:,:]**2)**.5,'cmo.speed','Speed',stream='orangered',symm=False)
+    addpanel(self,ax[1,0],self.drho,'cmo.delta_r','Buoyancy')
+    #addpanel(self,ax[0,0],self.Ta,'cmo.thermal','Ambient temp',symm=False)
+    #addpanel(self,ax[1,0],self.Sa,'cmo.haline','Ambient saln',symm=False)
+    
     addpanel(self,ax[0,1],self.D[1,:,:],'cmo.rain','Plume thickness',symm=False,log=True)
-    addpanel(self,ax[1,1],self.zb,'cmo.deep_r','Ice draft',symm=False,stream=True)
+    addpanel(self,ax[1,1],self.zb,'cmo.deep_r','Ice draft',symm=False,stream='orangered')
     #addpanel(self,ax[1,1],self.dzdx,'cmo.deep_r','Draft slope',symm=False,stream=False)
         
     addpanel(self,ax[0,2],self.T[1,:,:],'cmo.thermal','Plume temperature',symm=False)          
     addpanel(self,ax[1,2],self.S[1,:,:],'cmo.haline','Plume salinity',symm=False)   
     #addpanel(self,ax[1,2],self.drho,'cmo.dense','Buoyancy',symm=False)
             
-    addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True,stream=True)
+    addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True)
+    #addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.matter','Melt',symm=False)
     addpanel(self,ax[1,3],3600*24*365.25*self.entr,'cmo.turbid','Entraiment',symm=False)                
 
     plt.tight_layout()
@@ -421,6 +435,29 @@ def plotdudt(self):
     plt.tight_layout()
     plt.show()
 
+
+def plotdTdt(self):
+    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
+    
+    t1 = -self.T[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
+    t2 = convT(self,self.D[1,:,:]*self.T[1,:,:]) 
+    t3 = self.entr*self.Ta 
+    t4 = self.melt*(self.Tf - self.L/self.cp) 
+    t5 = self.Kh*lapT(self,self.T[0,:,:])
+    
+    tt = t1+t2+t3+t4+t5
+    
+    addpanel(self,ax[0,0],1e6*div0(tt,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','dT/dt')
+    addpanel(self,ax[1,0],1e6*div0(t1,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','dD/dt')
+            
+    addpanel(self,ax[0,1],1e6*div0(t2,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','conv')
+    addpanel(self,ax[1,1],1e6*div0(t3,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','entr')
+
+    addpanel(self,ax[0,2],1e6*div0(t4,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','melt')
+    addpanel(self,ax[1,2],1e6*div0(t5,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','lap')
+
+    plt.tight_layout()
+    plt.show()
     
 def plotdSdt(self):
     fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
@@ -482,11 +519,31 @@ def plotextra(self):
     addpanel(self,ax[0,1],1e6*tE,'RdBu_r','E')
     addpanel(self,ax[1,1],1e6*tW,'RdBu_r','W')
     
-def plotmelt(self):
-    fig,ax = plt.subplots(1,1,figsize=(15,15))            
-            
-    addpanel(self,ax,3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True,stream=True)
+def plotmelt(self,figsize):
+    fig,ax = plt.subplots(1,1,figsize=figsize)            
 
+    ax.set_aspect('equal', adjustable='box')  
+    x = np.append(self.x.values,self.x[-1].values+self.dx)-self.dx/2
+    y = np.append(self.y.values,self.y[-1].values+self.dy)-self.dy/2
+    xx,yy = np.meshgrid(self.x.values,self.y.values)
+
+    ax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-2.5,vmax=5)
+
+    var = 3600*24*365.25*self.melt
+    var = np.ma.masked_where(var<=0,var)
+    levs = np.power(10, np.arange(-1,2.5,.01))
+    IM = ax.contourf(xx,yy,xr.where(self.tmask,var,np.nan),levs,cmap=plt.get_cmap('magma'),norm=mpl.colors.LogNorm())      
+
+    cb = plt.colorbar(IM,ax=ax,orientation='horizontal')
+    cb.set_ticks([.1,1,10,100])
+    cb.set_label('Melt [m/yr]')
+
+    spd = ((im(self.u[1,:,:]*self.umask)**2 + jm(self.v[1,:,:]*self.vmask)**2)**.5)
+    lw = 4*spd/spd.max()
+    strm = ax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='w',density=5,arrowsize=.5)
+                              
+    ax.set_xticks([])
+    ax.set_yticks([])
     plt.tight_layout()
     plt.savefig('../../results/sheetmelt.png')
     plt.show()
