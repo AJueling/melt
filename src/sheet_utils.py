@@ -88,14 +88,14 @@ def initialize_vars(self):
     self.dzdy = np.gradient(self.zb,self.dy,axis=0)
     
     #Local freezing point [degC]
+    self.Ta = np.interp(self.zb,self.z,self.Tz)
     self.Sa = np.interp(self.zb,self.z,self.Sz)
     self.Tf = (self.l1*self.Sa+self.l2+self.l3*self.zb).values
         
     #Initial values
-    "Replace by optional spinup fields"
-    self.D += 1.1
-    self.T += -1.7#self.Tf
+    self.D += self.minD+.1
     for n in range(3):
+        self.T[n,:,:] = self.Ta
         self.S[n,:,:] = self.Sa-.1
 
     #Perform first integration step with 1 dt
@@ -194,21 +194,10 @@ def lapv(self):
 
 def convT(self,var):
     """Upstream convergence scheme for D, DT, DS"""
-    #tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*(np.roll(var,-1,axis=0)*self.tmaskym1 + var*self.ocnym1)) / self.dy * self.vmask
-    #tS =   (np.maximum(self.vyp1    ,0)*(np.roll(var,1,axis=0)*self.tmaskyp1 + var*self.ocnyp1) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
-    #tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*(np.roll(var,-1,axis=1)*self.tmaskxm1 + var*self.ocnxm1)) / self.dx * self.umask
-    #tW =   (np.maximum(self.uxp1    ,0)*(np.roll(var,1,axis=1)*self.tmaskxp1 + var*self.ocnxp1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
-
     tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*np.roll(var,-1,axis=0)) / self.dy * self.vmask
     tS =   (np.maximum(self.vyp1    ,0)*np.roll(var,1,axis=0) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
     tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*np.roll(var,-1,axis=1)) / self.dx * self.umask
     tW =   (np.maximum(self.uxp1    ,0)*np.roll(var,1,axis=1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
-
-    #tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*np.roll(var*self.tmask,-1,axis=0)) / self.dy * self.vmask
-    #tS =   (np.maximum(self.vyp1    ,0)*np.roll(var*self.tmask,1,axis=0) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
-    #tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*np.roll(var*self.tmask,-1,axis=1)) / self.dx * self.umask
-    #tW =   (np.maximum(self.uxp1    ,0)*np.roll(var*self.tmask,1,axis=1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
-    
     return (tN+tS+tE+tW) * self.tmask
 
 def convTcen(self,var):

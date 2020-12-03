@@ -59,6 +59,8 @@ class SheetModel(ModelConstants):
         self.dt = 30          # Time step [s]
         self.Kh = 50          # Diffusivity [m^2/s]
         
+        self.minD = 1.        # Cutoff thickness [m]
+        
         #Some parameters for displaying output
         self.diagint = 100    # Timestep at which to print diagnostics
         self.figsize = (15,10)
@@ -116,7 +118,7 @@ class SheetModel(ModelConstants):
             self.updatevars()
             self.integrate()
             self.timefilter()
-            self.D = np.where(self.D<1,1,self.D)
+            self.D = np.where(self.D<self.minD,self.minD,self.D)
             if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 su.printdiags(self)
         if self.verbose:
