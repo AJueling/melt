@@ -43,8 +43,9 @@ class SheetModel(ModelConstants):
         self.y    = ds.y        
         self.mask = ds.mask
         self.zb   = ds.draft
-        self.Ta   = ds.Ta
-        self.Sa   = ds.Sa
+        self.z    = ds.z.values
+        self.Tz   = ds.Tz.values
+        self.Sz   = ds.Sz.values
 
         #Physical parameters
         ModelConstants.__init__(self)
@@ -54,7 +55,7 @@ class SheetModel(ModelConstants):
         self.days = 6         # Total runtime in days
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
-        self.Ah = 200         # Laplacian viscosity [m^2/s]
+        self.Ah = 150         # Laplacian viscosity [m^2/s]
         self.dt = 30          # Time step [s]
         self.Kh = 50          # Diffusivity [m^2/s]
         
@@ -115,7 +116,7 @@ class SheetModel(ModelConstants):
             self.updatevars()
             self.integrate()
             self.timefilter()
-            self.D = np.where(self.D<1.,1.,self.D)
+            self.D = np.where(self.D<1,1,self.D)
             if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 su.printdiags(self)
         if self.verbose:
@@ -136,7 +137,8 @@ class SheetModel(ModelConstants):
         melt = xr.DataArray(self.melt,dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
         entr = xr.DataArray(self.entr,dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
         mav  = xr.DataArray(3600*24*365.25*(self.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum(),name='mav')
+        mmax = xr.DataArray(3600*24*365.25*self.melt.max(),name='mmax')
         
-        ds = xr.merge([u,v,D,T,S,melt,entr,mav])
+        ds = xr.merge([u,v,D,T,S,melt,entr,mav,mmax])
     
         return ds

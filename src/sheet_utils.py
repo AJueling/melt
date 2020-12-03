@@ -88,13 +88,15 @@ def initialize_vars(self):
     self.dzdy = np.gradient(self.zb,self.dy,axis=0)
     
     #Local freezing point [degC]
+    self.Sa = np.interp(self.zb,self.z,self.Sz)
     self.Tf = (self.l1*self.Sa+self.l2+self.l3*self.zb).values
         
     #Initial values
     "Replace by optional spinup fields"
-    self.D += 1.5
-    self.T += self.Tf
-    self.S += 33
+    self.D += 1.1
+    self.T += -1.7#self.Tf
+    for n in range(3):
+        self.S[n,:,:] = self.Sa-.1
 
     #Perform first integration step with 1 dt
     updatesecondary(self)
@@ -252,6 +254,9 @@ def convv(self):
 """Physical part below"""
 
 def updatesecondary(self):
+    self.Ta   = np.interp(self.zb-self.D[1,:,:],self.z,self.Tz)
+    self.Sa   = np.interp(self.zb-self.D[1,:,:],self.z,self.Sz)
+    
     self.drho = (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])) * self.tmask
     self.entr = self.E0*(np.abs(im(self.u[1,:,:])*self.dzdx + jm(self.v[1,:,:])*self.dzdy)) * self.tmask
     self.melt = self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
@@ -381,7 +386,7 @@ def addpanel(self,dax,var,cmap,title,symm=True,stream=None,density=1,log=False):
 def plotpanels(self):
     fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
     
-    addpanel(self,ax[0,0],(self.u[1,:,:]**2+self.v[1,:,:]**2)**.5,'cmo.speed','Speed',stream='orangered',symm=False)
+    addpanel(self,ax[0,0],(self.u[1,:,:]**2+self.v[1,:,:]**2)**.5,'cmo.speed','Speed',symm=False)
     addpanel(self,ax[1,0],self.drho,'cmo.delta_r','Buoyancy')
     #addpanel(self,ax[0,0],self.Ta,'cmo.thermal','Ambient temp',symm=False)
     #addpanel(self,ax[1,0],self.Sa,'cmo.haline','Ambient saln',symm=False)
@@ -527,12 +532,12 @@ def plotmelt(self,figsize):
     y = np.append(self.y.values,self.y[-1].values+self.dy)-self.dy/2
     xx,yy = np.meshgrid(self.x.values,self.y.values)
 
-    ax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-2.5,vmax=5)
+    ax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-1,vmax=3.5)
 
     var = 3600*24*365.25*self.melt
     var = np.ma.masked_where(var<=0,var)
     levs = np.power(10, np.arange(-1,2.5,.01))
-    IM = ax.contourf(xx,yy,xr.where(self.tmask,var,np.nan),levs,cmap=plt.get_cmap('magma'),norm=mpl.colors.LogNorm())      
+    IM = ax.contourf(xx,yy,xr.where(self.tmask,var,np.nan),levs,cmap=plt.get_cmap('inferno'),norm=mpl.colors.LogNorm())      
 
     cb = plt.colorbar(IM,ax=ax,orientation='horizontal')
     cb.set_ticks([.1,1,10,100])

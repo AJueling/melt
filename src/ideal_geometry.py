@@ -1,6 +1,8 @@
 import numpy as np
 import xarray as xr
 
+from constants import ModelConstants
+
 cases = ['plumeref',  # reference 1D case for Plume model
          'plume1D',   # any 1D domain for plume model
          'plume2D',   # a quasi-1D 2D domain for plume model
@@ -228,3 +230,33 @@ def FavierTest(iceshelf,forcing,dx=2e3):
     ds['Sa']      = (['y','x'], Sa)
     
     return ds
+
+
+class Forcing(ModelConstants):
+
+    def __init__(self):
+    
+        ModelConstants.__init__(self)
+
+        self.S0 = 34 #Reference surface salinity
+        self.T0 = self.l1*self.S0+self.l2 #Surface freezing temperature
+
+        self.z1 = 100 #Thermocline sharpness in m
+        self.z  = np.arange(-5000,0,1)
+    
+    def create(self,ztcl,Tdeep,drhodz):
+        
+        self.Tz = Tdeep + (self.T0-Tdeep) * (1+np.tanh((self.z-ztcl)/self.z1))/2
+        
+        self.Sz = self.S0 + self.alpha*(self.Tz-self.T0)/self.beta - drhodz*self.z/(self.beta*self.rho0)
+        
+        z = xr.DataArray(self.z,name='z')
+        Tz = xr.DataArray(self.Tz,name='Tz')
+        Sz = xr.DataArray(self.Sz,name='Sz')
+
+        ds = xr.merge([z,Tz,Sz])
+        
+        return ds
+
+    
+    
