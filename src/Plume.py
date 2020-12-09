@@ -19,6 +19,7 @@ class PlumeModel(ModelConstants):
             .   grl_adv     (x)/(x,y)     [m]  advected grounding line depth
             .   Ta [*]   ()/(x)/(x,y)  [degC]  ambient temperature
             .   Sa [*]   ()/(x)/(x,y)   [psu]  ambient salinity
+            .   Tf          (x)/(x,y)  [degC]  local freezing point 
             [*] vary only in PICOP model, taken from PICO model
         
         output:  [calling `.compute_plume()`]
@@ -29,21 +30,13 @@ class PlumeModel(ModelConstants):
         ModelConstants.__init__(self)
         assert type(dp)==xr.core.dataset.Dataset
         assert 'x' in dp.coords
-        if 'y' in dp.coords:  self.mode = '2D'
-        else:                 self.mode = '1D'
-        for q in ['dgrl', 'draft', 'alpha','grl_adv','Ta','Sa']:
-            assert q in dp
+        for q in ['dgrl', 'draft', 'alpha','grl_adv','Ta','Sa','Tf']:
+            assert q in dp, f'missing {q}'
         self.dp = dp
 
-        def freezing_point(depth):
-            return self.l1*self.dp.Sa + self.l2 + self.l3*depth
         # freezing point at corresponding grounding line, eqn (7)
-        self.dp['Tf0'] = freezing_point(self.dp.grl_adv)
+        self.dp['Tf0'] = self.l1*self.dp.Sa + self.l2 + self.l3*self.dp.grl_adv
         self.dp.Tf0.attrs = {'long_name':'pressure freezing point at corresponding grounding line'}
-        # freezing point at ice sheet base, should be eqn (8), but adapted for non-uniform slope  
-        self.dp['Tf'] = freezing_point(self.dp.draft)
-        self.dp.Tf.attrs = {'long_name':'local pressure freezing point', 'units':'degC'}
-                        
         
         # calculate dimensionless coordinate dgrl_=$\tilde{x}$ (28b)
         self.Ea = self.E0*np.sin(self.dp.alpha)

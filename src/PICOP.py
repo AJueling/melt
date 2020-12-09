@@ -12,14 +12,10 @@ class PicoPlumeModel(PicoModel, PlumeModel, RealGeometry):
     """ PICOP model by Pelle et al. (2019)
         combines PICO model (Reese et al. 2018) and plume model (Lazeroms et al. 2018)
     """
-    def __init__(self, name, Ta=None, Sa=None, n=None, ds=None):
+    def __init__(self, ds):
         """ create geometry """
-        assert name in glaciers or name in cases
-        # assert type(Ta) is float or Ta is None
-        # assert type(Sa) is float or Sa is None
-        assert type(n)==int and n>0 and n<10 or n is None
+        PicoModel.__init__(self, ds=ds)
 
-        PicoModel.__init__(self, name=name, Ta=Ta, Sa=Sa, n=n)
         # self.compute_pico()
         # also initiates ModelConstants
         # loads 

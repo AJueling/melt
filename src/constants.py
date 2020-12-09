@@ -12,6 +12,7 @@ class ModelConstants(object):
         self.g      = 9.81      # [m/s^2]     gravitational acceleration
         self.L      = 3.35e5    # [J/kg]      Latent heat of fusion for ice
         self.cp     = 3.974e3   # [J/kg/degC] specific heat capacity of ocean
+        self.spy    = 86400*365 # [s/yr]      seconds per yer
         
         # PICO model
         self.a      = -0.0572   # [degC /psu]
@@ -26,6 +27,11 @@ class ModelConstants(object):
         self.gammaT =  5e-5     # [m/s]       temperature mixing coefficient $$
         self.gammae =  2e-5     # [m/s]       effective mixing coefficient $\gamma^\star_T$
         self.C      =  1e6      # [m^6/s/kg]
+
+        self.gT_Ml  =  2.02e-5
+        self.gT_Mq  =  99.32e-5
+        self.gT_Mp  =  132.9e-5 
+
         
         # Plume model (from Table 1)
         self.l1     = -5.73e-2  # [degC]      freezing point salinity coefficient
