@@ -12,34 +12,39 @@ cases = ['plumeref',  # reference 1D case for Plume model
          ]
 
 
-class IdealGeometry(object):
-    """ creating idealized geometries for comparing melt models; illustrated in `Geometry.ipynb` """
+class IdealGeometry(ModelConstants):
+    """ creating idealized geometries for comparing melt models; illustrated in `Geometry.ipynb`
+    
+        output:
+        ds  (xr.Dataset)             containing:
+            draft    (x,y)    [m]    vertical position of ice shelf base  (<=0)
+            p        (x,y)    [Pa]   hydrostatic pressure
+            mask     (x,y)    [int]  [0] ocean, [1] grounded ice, [3] ice shelf; like BedMachine dataset
+            dgrl     (x,y)    [m]    distance to grounding line, needed for PICO/P boxes
+            alpha    (x,y)    [rad]  local angle, needed for Plume and PICOP
+            grl_adv  (x,y)    [m]    advected grounding line depth, needed for Plume and PICOP
+            box      (x,y)    [int]  box number [1,n] for PICO and PICOP models
+            area_k   (boxnr)  [m^2]  area per box
+    """
     def __init__(self, name, pdict=None):
         """ 
         input:
         name  .. (str) 
         pdict .. (dict)  parameter dictionary
         """
+        ModelConstants.__init__(self)
         assert name in cases
         self.name = name
         self.pdict = pdict
+        self.n = 5
         return
 
-    def test_geometry(self, case, Ta=0, Sa=34, n=3):
+    def test_geometry(self, case):
         """ creates standard test case geometries
         format designed to be compatible with Bedmachine data
         
-        input:   case (int)
-
-        output:  ds (xr.Dataset) contains the following fields
-        draft   ..  
-        mask    ..  [0] ocean, [1] grounded ice, [3] ice shelf; like BedMachine dataset
-        u/v     ..  
-        Ta/Sa   ..  constant, ambient temperature/salinity
-        angle   ..  local angle, needed for Plume and PICOP
-        grl_adv ..  advected grounding line depth, needed for Plume and PICOP
-        box     ..  box number [1,n] for PICO and PICOP models
-        area_k  ..  area per box
+        input:   case   (int)
+        output:  (see class docstring)
         """
 
         assert type(case)==int
@@ -104,15 +109,14 @@ class IdealGeometry(object):
             ds.mask[-1,:] = 0
             dgrl = d_y
 
-        ds['box']     = define_boxes(dim=box_dim, n=n)
-        ds['area_k']  = area_per_box(n=3)
+        ds['box']     = define_boxes(dim=box_dim, n=self.n)
+        ds['area_k']  = area_per_box(n=self.n)
         ds['draft']   = (['y','x'], draft              )
-        ds['Ta']      = (['y','x'], Ta*np.ones((ny,nx)))
-        ds['Sa']      = (['y','x'], Sa*np.ones((ny,nx)))
         ds['dgrl']    = (['y','x'], dgrl               )
         ds['alpha']   = (['y','x'], alpha              )
         ds['grl_adv'] = (['y','x'], grl_adv            )
-        return ds
+        self.ds = ds
+        return self.ds
 
     def plume_1D_geometry(self, x, draft, Ta, Sa):
         """ make 1D dataset that Plume model can work with
@@ -127,37 +131,40 @@ class IdealGeometry(object):
         ds = xr.Dataset(coords={'x':x})
         ds['dgrl'] = ('x', x)
         ds['draft'] = ('x', draft)
-        ds['Ta'] =  Ta
+        ds['Ta'] = Ta
         ds['Sa'] = Sa
         ds['alpha'] = ('x', np.arctan(np.gradient(draft, x)))
         ds['grl_adv'] = ('x', np.full_like(draft, draft[0]))
-        return ds
+        self.ds = ds
+        return self.ds
 
     def create(self):
         """ function to return geometry dataset """
+
+        # geometry
         if self.name=='plumeref':
             N = 101
-            ds = self.plume_1D_geometry(x=np.linspace(0,5e5,N), draft=np.linspace(-1000,0,N), Ta=-1.9, Sa=34.65)
+            self.ds = self.plume_1D_geometry(x=np.linspace(0,5e5,N), draft=np.linspace(-1000,0,N), Ta=-1.9, Sa=34.65)
         elif self.name=='plume1D':
             p = self.pdict
             for q in ['x', 'draft', 'Ta', 'Sa']:  assert q in p
-            ds = self.plume_1D_geometry(x=p['x'], draft=p['draft'], Ta=p['Ta'], Sa=p['Sa'])
+            self.ds = self.plume_1D_geometry(x=p['x'], draft=p['draft'], Ta=p['Ta'], Sa=p['Sa'])
         elif self.name[:4]=='test':
-            Ta, Sa = 0, 34
-            if self.pdict is not None:
-                if 'Ta' in self.pdict:   Ta = self.pdict['Ta']
-                if 'Sa' in self.pdict:   Sa = self.pdict['Sa']
             case = int(self.name[4:])
-            ds = self.test_geometry(case=case, Ta=Ta, Sa=Sa)
+            self.ds = self.test_geometry(case=case)
 
+        self.ds['p'] = abs(self.ds.draft)*self.rho0*self.g  # assuming constant density
+        self.ds['n'] = self.n
+        self.ds['name_geo'] = f'{self.name}_{self.n}'
         # metadata
-        ds.dgrl.attrs    = {'long_name':'distance to grounding line (`X` in publication)', 'units':'m'}
-        ds.draft.attrs   = {'long_name':'ice shelf base depth', 'units':'m'}
-        ds.Ta.attrs      = {'long_name':'ambient temperature', 'units':'degC'}
-        ds.Sa.attrs      = {'long_name':'ambient salinity', 'units':'psu'}
-        ds.alpha.attrs   = {'long_name':'local slope angle along stream lines', 'units':'rad'}
-        ds.grl_adv.attrs = {'long_name':'advected grounding line depth / plume origin depth', 'units':'m'}
-        return ds
+        self.ds.dgrl.attrs    = {'long_name':'distance to grounding line (`X` in publication)', 'units':'m'}
+        self.ds.draft.attrs   = {'long_name':'ice shelf base depth', 'units':'m'}
+        self.ds.alpha.attrs   = {'long_name':'local slope angle along stream lines', 'units':'rad'}
+        self.ds.grl_adv.attrs = {'long_name':'advected grounding line depth / plume origin depth', 'units':'m'}
+        self.ds.p.attrs       = {'long_name':'hydrostatic pressure', 'units':'Pa'}  
+        self.ds.n.attrs       = {'long_name':'box number; 0 is ambient'}
+
+        return self.ds
     
 def FavierTest(iceshelf,forcing,dx=2e3):
     dy=dx
@@ -196,67 +203,5 @@ def FavierTest(iceshelf,forcing,dx=2e3):
     else:
         draft, _ = np.meshgrid(np.linspace(zdeep,zshallow,nx), np.ones((ny)))
     
-    if forcing == 'cold0':
-        z = [-5000,-700,-300,0]
-        Tz = [-1.5,-1.5,-1.5,-1.5]
-        Sz = [34,34,34,34]
-    elif forcing == 'cold1':
-        z = [-5000,-700,-300,0]
-        Tz = [1.2,1.2,-0.6,-0.6]
-        Sz = [34.5,34.5,34,34]
-    elif forcing == 'warm0':
-        z = [-5000,-700,-300,0]
-        Tz = [1.2,1.2,-1.0,-1.0]
-        Sz = [34.5,34.5,34,34]
-    elif forcing == 'warm1':
-        z = [-5000,-700,-300,0]
-        Tz = [2.2,2.2,0,0]
-        Sz = [34.5,34.5,34,34]        
-    elif forcing == 'warm2':
-        z = [-5000,-700,-300,0]
-        Tz = [2.2,2.2,-1,-1]
-        Sz = [34.5,34.5,34,34]         
-    elif forcing == 'warm3':
-        z = [-5000,-500,-100,0]
-        Tz = [1.2,1.2,-1.0,-1.0]
-        Sz = [34.5,34.5,34,34]        
-        
-    Ta = np.interp(draft,z,Tz)
-    Sa = np.interp(draft,z,Sz) - 0.0002*draft
-    
-    ds = xr.Dataset({'mask':(['y','x'], mask)}, coords={'x':x, 'y':y})    
-    ds['draft']   = (['y','x'], draft)
-    ds['Ta']      = (['y','x'], Ta)
-    ds['Sa']      = (['y','x'], Sa)
-    
     return ds
 
-
-class Forcing(ModelConstants):
-
-    def __init__(self):
-    
-        ModelConstants.__init__(self)
-
-        self.S0 = 34 #Reference surface salinity
-        self.T0 = self.l1*self.S0+self.l2 #Surface freezing temperature
-
-        self.z1 = 100 #Thermocline sharpness in m
-        self.z  = np.arange(-5000,0,1)
-    
-    def create(self,ztcl,Tdeep,drhodz):
-        
-        self.Tz = Tdeep + (self.T0-Tdeep) * (1+np.tanh((self.z-ztcl)/self.z1))/2
-        
-        self.Sz = self.S0 + self.alpha*(self.Tz-self.T0)/self.beta - drhodz*self.z/(self.beta*self.rho0)
-        
-        z = xr.DataArray(self.z,name='z')
-        Tz = xr.DataArray(self.Tz,name='Tz')
-        Sz = xr.DataArray(self.Sz,name='Sz')
-
-        ds = xr.merge([z,Tz,Sz])
-        
-        return ds
-
-    
-    

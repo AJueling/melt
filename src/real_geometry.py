@@ -11,6 +11,7 @@ import geopandas
 import matplotlib
 import matplotlib.pyplot as plt
 
+from constants import ModelConstants
 from advect import advect_grl
 from shapely.geometry import mapping
 from tqdm.autonotebook import tqdm
@@ -36,7 +37,7 @@ glaciers = ['Amery',
             'FilchnerRonne',
            ]
 coarse_resolution = ['Ross', 'FilchnerRonne']
-# total advection time
+# total advection time  [yrs]
 T_adv = {'Totten'          : 400,
          'MoscowUniversity': 400,
          'Thwaites'        : 200, 
@@ -50,20 +51,48 @@ noPICO = {'MoscowUniversity': {'n':2, 'Ta':-0.73, 'Sa':34.73},  #  8
 table2 = pd.read_csv(f'{path}/doc/Reese2018/Table2.csv', index_col=0)
 
 
-class RealGeometry(object):
-    """ create geometry files for PICO and PICOP models """
+class RealGeometry(ModelConstants):
+    """ create geometry files of realistic ice shelves based on BedMachine2 data
+    
+        output:
+        ds  (xr.Dataset)             containing:
+            draft    (x,y)    [m]    vertical position of ice shelf base  (<=0)
+            p        (x,y)    [Pa]   hydrostatic pressure
+            # mask     (x,y)    [int]  [0] ocean, [1] grounded ice, [3] ice shelf; like BedMachine dataset
+            mask     (x,y) *  [bool] mask of ice shelf in domain 
+            grl      (x,y) *  [bool] grounding line mask
+            isf      (x,y) *  [bool] ice shelf front mask
+            dgrl     (x,y)    [m]    distance to grounding line, needed for Plume and PICOP  !!! not yet implemented
+            dglm     (x,y) *  [m]    distance to grounding line, needed for PICO/P boxes
+            disf     (x,y) *  [m]    minimum distance to isf
+            rd       (x,y) *  [0,1]  relative distance
+            alpha    (x,y)    [rad]  local angle, needed for Plume and PICOP
+            grl_adv  (x,y)    [m]    advected grounding line depth, needed for Plume and PICOP
+            box      (x,y)    [int]  box number [1,n] for PICO and PICOP models
+            area_k   (boxnr)  [m^2]  area per box
+
+            (*) intermediate results only, not needed for any of the models
+                        . mask   .. 
+            . 
+            . 
+            . box    .. (int)    box number [1,...,n]
+            . area   .. (float)  area of each box [m^2]
+    """
     def __init__(self, name, n=None):
         """
         input:
         name .. name of ice shelf
         n    .. number of boxes in PICO model
+
+        output:
+
         """
+        ModelConstants.__init__(self)
         assert name in glaciers
         self.name = name
         if n is None:  self.n = RealGeometry.find(self.name, 'n')
         else:          self.n = n
-        self.fn_PICO = f'{path}/results/PICO/{name}_n{self.n}_geometry.nc'
-        self.fn_PICOP = f'{path}/results/PICOP/{name}_n{self.n}_geometry.nc'
+        self.fn     = f'{path}/results/geometry/{name}_n{self.n}_geometry.nc'
         self.fn_evo = f'{path}/results/advection/{name}_evo.nc'
         self.fn_isf = f'{path}/data/mask_polygons/{name}_isf.geojson'
         self.fn_grl = f'{path}/data/mask_polygons/{name}_grl.geojson'
@@ -72,7 +101,6 @@ class RealGeometry(object):
             assert os.path.exists(fn), f'file does not exists:  {fn}'
         return
     
-    ### PICO methods
     def select_geometry(self):
         """ selects the appropriate domain of BedMachine dataset 
         the polygon stored in the .geojson was created in QGIS
@@ -104,12 +132,13 @@ class RealGeometry(object):
         else:       Q = float(Q)
         return Q
 
-    def calc_draft(self):
+    def calc_draft_p(self):
         """  add draft ()=surface-thickness) to self.ds """
-        draft = (self.ds.surface-self.ds.thickness).where(self.ds.mask==3)
-        draft.name = 'draft'
-        draft.attrs = {'long_name':'depth of ice shelf-ocean interface', 'units':'m'}
-        self.ds = xr.merge([self.ds, draft])
+        self.ds['draft'] = (self.ds.surface-self.ds.thickness).where(self.ds.mask==3)
+        self.ds.draft.attrs = {'long_name':'depth of ice shelf-ocean interface', 'units':'m'}
+        self.ds['p'] = abs(self.ds.draft)*self.rho0*self.g  # assuming constant density
+        self.ds.p.attrs       = {'long_name':'hydrostatic pressure', 'units':'Pa'}  
+
         return
 
     def determine_grl_isf(self):
@@ -223,15 +252,17 @@ class RealGeometry(object):
         """ calculate minimum distances to ice shelf front / grounding line
         
         output:
-        dgrl  .. min distance to grounding line
+        dglm  .. min distance to grounding line
         disf  .. min distance to ice shelf front
-        rd    .. relative disantce from grounding line
+        rd    .. relative distance from grounding line
         """
-        self.ds['dgrl'] = RealGeometry.distance_to_line(self.ds.mask, self.ds.grl)
+        self.ds['dglm'] = RealGeometry.distance_to_line(self.ds.mask, self.ds.grl)
+        self.ds['dgrl'] = self.ds.dglm.copy()
+        self.ds.dglm.attrs = {'long_name':'minimum distance to grounding line', 'units':'m'}
         self.ds.dgrl.attrs = {'long_name':'minimum distance to grounding line', 'units':'m'}
         self.ds['disf'] = RealGeometry.distance_to_line(self.ds.mask, self.ds.isf)
         self.ds.disf.attrs = {'long_name':'minimum distance to ice shelf front', 'units':'m'}
-        self.ds['rd'] = self.ds.dgrl/(self.ds.dgrl+self.ds.disf)
+        self.ds['rd'] = self.ds.dglm/(self.ds.dglm+self.ds.disf)
         self.ds.rd.attrs = {'long_name':'dimensionless relative distance'}
         return
 
@@ -276,63 +307,6 @@ class RealGeometry(object):
         self.ds.area_k.attrs = {'long_name':'area per box', 'units':'m^2'}
         return
 
-    def PICO_geometry(self, new=False):
-        """ creates geometry Dataset for PICO model containing
-        coordinates:
-        x, y    .. from BedMachine dataset [m]
-        box     .. box number [1,...,n]
-
-        output:
-        self.ds .. (xr.Dataset)
-            . mask   .. (bool)   mask of ice shelf in domain
-            . draft  .. (float)  depth of ice shelf [m]
-            . grl    .. (bool)   grounding line mask
-            . isf    .. (bool)   ice shelf front mask
-            . dgrl   .. (float)  distance to grl [m]
-            . disf   .. (float)  distance to isf [m]
-            . rd     .. (float)  relative distance [0,1]
-            . box    .. (int)    box number [1,...,n]
-            . area   .. (float)  area of each box [m^2]
-        """
-        if os.path.exists(self.fn_PICO) and new==False:
-            print(f'\n--- load PICO geometry file: {self.name} ---')
-            self.ds = xr.open_dataset(self.fn_PICO)
-        else:
-            print(f'\n--- generate PICO geometry {self.name} n={self.n} ---')
-            self.select_geometry()
-            self.calc_draft()
-            self.determine_grl_isf()
-            self.find_distances()
-            self.add_latlon()
-            self.define_boxes()
-            self.calc_area()
-            self.ds.drop(['mapping', 'spatial_ref']).to_netcdf(self.fn_PICO)
-        return self.ds
-
-    def plot_PICO(self):
-        """ plots all PICOP fields """
-        if os.path.exists(self.fn_PICO):
-            ds = xr.open_dataset(self.fn_PICO)
-        else:
-            ds = self.PICO()
-        kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
-        f, ax = plt.subplots(1, 5, figsize=(15,5), constrained_layout=True, sharey=True, sharex=True)
-        ds.draft.name = 'draft [meters]'
-        ds.draft.plot(ax=ax[0], cmap='plasma', **kwargs, vmax=0)
-        ds.grl.where(ds.grl>0).plot(ax=ax[0], cmap='Blues', add_colorbar=False)
-        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds' , add_colorbar=False)
-        ds.disf.name = 'to ice shelf front [km]'
-        (ds.disf/1e3).plot(ax=ax[1], **kwargs)
-        ds.dgrl.name = 'to grounding line [km]'
-        (ds.dgrl/1e3).plot(ax=ax[2], **kwargs)
-        ds.rd.name = 'relative distance'
-        (ds.rd).plot(ax=ax[3], **kwargs)
-        ds.box.name = 'box nr.'
-        (ds.box).plot(ax=ax[4], **kwargs)
-        f.suptitle(f'{self.name} Ice Shelf', fontsize=16)
-        return
-
-    ### PICOP methods
     def interpolate_velocity(self):
         """ interpolates 450 m spaced velocity onto geometry (500 m spaced) grid 
         add new velocity fields (`u` and `v`) to dataset `self.ds`
@@ -430,30 +404,62 @@ class RealGeometry(object):
         self.ds.attrs = {'long_name':'largest angle with horizontal', 'units':'rad'}
         return
 
-    def PICOP_geometry(self, new=False):
-        """ creates geometry Dataset for PICOP model containing
-        all PICO DataArrays
-        u  .. x-velocity
-        v  .. y-velocity
-        """
-        if os.path.exists(self.fn_PICOP) and new==False:
-            print(f'\n--- load PICOP geometry file: {self.name} ---')
-            self.ds = xr.open_dataset(self.fn_PICOP)
+    def create(self, new=False):
+        """ creates geometry Dataset for all models (see class docstring for output details) """
+        if os.path.exists(self.fn) and new==False:
+            print(f'\n--- load geometry file: {self.name} ---')
+            self.ds = xr.open_dataset(self.fn)
         else:
-            print(f'\n--- generate PICOP geometry {self.name} n={self.n} ---')
-            self.PICO_geometry()  # create or load all fields for PICO
+            print(f'\n--- generate geometry {self.name} n={self.n} ---')
+            self.select_geometry()  # creates self.ds from BedMachine data
+            self.calc_draft_p()
+            self.determine_grl_isf()
+            self.find_distances()
+            self.add_latlon()
+            self.define_boxes()
+            self.calc_area()
             self.interpolate_velocity()
             self.adv_grl()
             self.calc_angles()
-            self.ds.to_netcdf(self.fn_PICOP) # .drop(['mapping', 'spatial_ref'])
+            # needs dgrl for PICOP
+            self.ds['n'] = self.n
+            self.ds.n.attrs = {'long_name':'box number; 0 is ambient'}
+            self.ds['name_geo'] = f'{self.name}_{self.n}'
+            self.ds = self.ds.drop(['mapping', 'spatial_ref'])
+            self.ds.to_netcdf(self.fn) # .drop(['mapping', 'spatial_ref'])
         return self.ds
+
+    """ plotting """
+
+    def plot_PICO(self):
+        """ plots all PICOP fields """
+        if os.path.exists(self.fn):
+            ds = xr.open_dataset(self.fn)
+        else:
+            ds = self.create()
+        kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
+        f, ax = plt.subplots(1, 5, figsize=(15,5), constrained_layout=True, sharey=True, sharex=True)
+        ds.draft.name = 'draft [meters]'
+        ds.draft.plot(ax=ax[0], cmap='plasma', **kwargs, vmax=0)
+        ds.grl.where(ds.grl>0).plot(ax=ax[0], cmap='Blues', add_colorbar=False)
+        ds.isf.where(ds.isf>0).plot(ax=ax[0], cmap='Reds' , add_colorbar=False)
+        ds.disf.name = 'min. to ice shelf front [km]'
+        (ds.disf/1e3).plot(ax=ax[1], **kwargs)
+        ds.dglm.name = 'min. to grounding line [km]'
+        (ds.dglm/1e3).plot(ax=ax[2], **kwargs)
+        ds.rd.name = 'relative distance'
+        (ds.rd).plot(ax=ax[3], **kwargs)
+        ds.box.name = 'box nr.'
+        (ds.box).plot(ax=ax[4], **kwargs)
+        f.suptitle(f'{self.name} Ice Shelf', fontsize=16)
+        return
 
     def plot_PICOP(self):
         """ plots important PICO fields + interpolated velocity """
-        if os.path.exists(self.fn_PICOP):
-            ds = xr.open_dataset(self.fn_PICOP)
+        if os.path.exists(self.fn):
+            ds = xr.open_dataset(self.fn)
         else:
-            ds = self.PICOP_geometry()
+            ds = self.create()
         
         f, ax = plt.subplots(1, 4, figsize=(12,5), constrained_layout=True, sharey=True)
         kwargs = {'cbar_kwargs':{'orientation':'horizontal'}}
@@ -495,10 +501,8 @@ if __name__=='__main__':
     if len(sys.argv)>2:  # if glacier is named, only calculate geometry for this one
         glacier = sys.argv[2]
         assert glacier in glaciers, f'input {glacier} not recognized, must be in {glaciers}'
-        RealGeometry(name=glacier).PICO_geometry(new=new)
-        RealGeometry(name=glacier).PICOP_geometry(new=new)
+        RealGeometry(name=glacier).create(new=new)
     else:  # calculate geometry for all glaciers
         for i, glacier in enumerate(glaciers):
             if i in [0,3,7]:  continue
-            RealGeometry(name=glacier).PICO_geometry(new=new)
-            RealGeometry(name=glacier).PICOP_geometry(new=new)
+            RealGeometry(name=glacier).create(new=new)
