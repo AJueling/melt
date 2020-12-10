@@ -3,6 +3,8 @@ import xarray as xr
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import cmocean as cmo
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 
 def create_mask(self):
         
@@ -11,7 +13,6 @@ def create_mask(self):
     self.grd   = np.where(self.mask==2,1,0)
     self.grd   = np.where(self.mask==1,1,self.grd)
     self.ocn   = np.where(self.mask==0,1,0)
-    #assert zeros at all edges x 0,-1 and y 0,-1
 
     #Rolled masks
     self.tmaskym1    = np.roll(self.tmask,-1,axis=0)
@@ -87,12 +88,10 @@ def initialize_vars(self):
     self.dzdx = np.gradient(self.zb,self.dx,axis=1)
     self.dzdy = np.gradient(self.zb,self.dy,axis=0)
     
-    #Local freezing point [degC]
-    self.Ta = np.interp(self.zb,self.z,self.Tz)
-    self.Sa = np.interp(self.zb,self.z,self.Sz)
-    self.Tf = (self.l1*self.Sa+self.l2+self.l3*self.zb).values
-        
     #Initial values
+    self.Ta = np.interp(self.zb,self.z,self.Tz)
+    self.Sa = np.interp(self.zb,self.z,self.Sz)   
+    
     self.D += self.minD+.1
     for n in range(3):
         self.T[n,:,:] = self.Ta
@@ -245,6 +244,7 @@ def convv(self):
 def updatesecondary(self):
     self.Ta   = np.interp(self.zb-self.D[1,:,:],self.z,self.Tz)
     self.Sa   = np.interp(self.zb-self.D[1,:,:],self.z,self.Sz)
+    self.Tf   = (self.l1*self.S[1,:,:]+self.l2+self.l3*self.zb).values
     
     self.drho = (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])) * self.tmask
     self.entr = self.E0*(np.abs(im(self.u[1,:,:])*self.dzdx + jm(self.v[1,:,:])*self.dzdy)) * self.tmask
@@ -352,7 +352,7 @@ def printdiags(self):
 def addpanel(self,dax,var,cmap,title,symm=True,stream=None,density=1,log=False):
     x = np.append(self.x.values,self.x[-1].values+self.dx)-self.dx/2
     y = np.append(self.y.values,self.y[-1].values+self.dy)-self.dy/2
-    dax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-2.5,vmax=5) 
+    dax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-1,vmax=3) 
 
     if log:
         vvar = np.ma.masked_where(var<=0,var)
@@ -513,7 +513,7 @@ def plotextra(self):
     addpanel(self,ax[0,1],1e6*tE,'RdBu_r','E')
     addpanel(self,ax[1,1],1e6*tW,'RdBu_r','W')
     
-def plotmelt(self,figsize):
+def plotmelt(self,filename,figsize,density):
     fig,ax = plt.subplots(1,1,figsize=figsize)            
 
     ax.set_aspect('equal', adjustable='box')  
@@ -521,23 +521,33 @@ def plotmelt(self,figsize):
     y = np.append(self.y.values,self.y[-1].values+self.dy)-self.dy/2
     xx,yy = np.meshgrid(self.x.values,self.y.values)
 
-    ax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-1,vmax=3.5)
+    ax.pcolormesh(x,y,self.mask,cmap=plt.get_cmap('cmo.diff'),vmin=-1,vmax=3)
 
+    #cmap = plt.get_cmap('jet')
+    cmap = plt.get_cmap('inferno')
+    
     var = 3600*24*365.25*self.melt
-    var = np.ma.masked_where(var<=0,var)
-    levs = np.power(10, np.arange(-1,2.5,.01))
-    IM = ax.contourf(xx,yy,xr.where(self.tmask,var,np.nan),levs,cmap=plt.get_cmap('inferno'),norm=mpl.colors.LogNorm())      
+    var = np.where(var>.1,var,.1)
+    levs = np.power(10, np.arange(-1,2.51,.01))
+    IM = ax.contourf(xx,yy,xr.where(self.tmask,var,np.nan),levs,cmap=cmap,norm=mpl.colors.LogNorm())      
 
-    cb = plt.colorbar(IM,ax=ax,orientation='horizontal')
-    cb.set_ticks([.1,1,10,100])
-    cb.set_label('Melt [m/yr]')
-
+    the_divider = make_axes_locatable(ax)
+    color_axis = the_divider.append_axes("right", size="5%", pad=0.1)
+    cbar = plt.colorbar(IM, cax=color_axis)
+    cbar.set_ticks([.1,1,10,100])
+    cbar.set_ticklabels([.1,1,10,100])
+    cbar.ax.tick_params(labelsize=21)
+    cbar.set_label('Melt [m/yr]', fontsize=21, labelpad=-2)
+    
     spd = ((im(self.u[1,:,:]*self.umask)**2 + jm(self.v[1,:,:]*self.vmask)**2)**.5)
     lw = 4*spd/spd.max()
-    strm = ax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='w',density=5,arrowsize=.5)
-                              
+    strm = ax.streamplot(self.x.values,self.y.values,im(self.u[1,:,:]*self.umask),jm(self.v[1,:,:]*self.vmask),linewidth=lw,color='w',density=density,arrowsize=.5)
+
+
+    
+    
     ax.set_xticks([])
     ax.set_yticks([])
     plt.tight_layout()
-    plt.savefig('../../results/sheetmelt.png')
+    plt.savefig(f'../../results/{filename}.png')
     plt.show()

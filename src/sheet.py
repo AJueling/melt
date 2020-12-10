@@ -55,9 +55,9 @@ class SheetModel(ModelConstants):
         self.days = 6         # Total runtime in days
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
-        self.Ah = 150         # Laplacian viscosity [m^2/s]
-        self.dt = 30          # Time step [s]
-        self.Kh = 50          # Diffusivity [m^2/s]
+        self.Ah = 100         # Laplacian viscosity [m^2/s]
+        self.dt = 60          # Time step [s]
+        self.Kh = 10          # Diffusivity [m^2/s]
         
         self.minD = 1.        # Cutoff thickness [m]
         
@@ -105,8 +105,8 @@ class SheetModel(ModelConstants):
         su.plotdSdt(self)
         return
     
-    def plotmelt(self,figsize=(15,15)):
-        su.plotmelt(self,figsize=figsize)
+    def plotmelt(self,filename='test',figsize=(10,10),density=5):
+        su.plotmelt(self,filename,figsize,density)
         return
     
     def compute(self):
