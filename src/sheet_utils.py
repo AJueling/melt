@@ -6,19 +6,19 @@ import cmocean as cmo
 from numba import jit
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def roll_ym1(X):
     return np.reshape(np.roll(np.ravel(X),-X.shape[1]),X.shape)
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def roll_yp1(X):
     return np.reshape(np.roll(np.ravel(X),X.shape[1]),X.shape)
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def roll_xm1(X):
     return np.transpose(np.reshape(np.roll(np.ravel(np.transpose(X)),-X.shape[0]),(X.shape[1],X.shape[0])))
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def roll_xp1(X):
     return np.transpose(np.reshape(np.roll(np.ravel(np.transpose(X)),X.shape[0]),(X.shape[1],X.shape[0])))
 
@@ -122,46 +122,46 @@ def initialize_vars(self):
     intS(self,self.dt)
     return
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def div0(a,b):
     return np.where(b>0,a/b,0)
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def im(var):
     """Value at i-1/2 """
     return .5*(var+roll_xp1(var))
     
-@jit(nopython=True)
+#@jit(nopython=True)
 def ip(var):
     """Value at i+1/2"""
     return .5*(var+roll_xm1(var))
 
-@jit(nopython=True)    
+#@jit(nopython=True)    
 def jm(var):
     """Value at j-1/2"""
     return .5*(var+roll_yp1(var))
 
-@jit(nopython=True)    
+#@jit(nopython=True)    
 def jp(var):
     """Value at j+1/2"""
     return .5*(var+roll_ym1(var))
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def im_(var,mask):
     """Value at i-1/2, no gradient across boundary"""
     return div0((var*mask + roll_xp1(var*mask)),(mask+roll_xp1(mask)))
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def ip_(var,mask):
     """Value at i+1/2, no gradient across boundary"""
     return div0((var*mask + roll_xm1(var*mask)),(mask+roll_xm1(mask)))
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def jm_(var,mask):
     """Value at j-1/2, no gradient across boundary"""
     return div0((var*mask + roll_yp1(var*mask)),(mask+roll_yp1(mask)))
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def jp_(var,mask):
     """Value at j+1/2, no gradient across boundary"""
     return div0((var*mask + roll_ym1(var*mask)),(mask+roll_ym1(mask)))
@@ -292,6 +292,7 @@ def intu(self,delt):
                     +  self.Ah*lapu(self)
                     ),ip_(self.D[1,:,:],self.tmask)) * self.umask * delt
 
+#u,v,D,dt,tmask,dx,dy,g,drho,dzdy,f,Cd,Ah,vmask,delt
 def intv(self,delt):
     """Integrate v"""
     self.v[2,:,:] = self.v[0,:,:] \
@@ -305,6 +306,7 @@ def intv(self,delt):
                     + self.Ah*lapv(self)
                     ),jp_(self.D[1,:,:],self.tmask)) * self.vmask * delt
     
+#T,D,u,v,dt,entr,melt,Ta,Tf,L,cp,Kh,tmask,delt
 def intT(self,delt):
     """Integrate T"""
     self.T[2,:,:] = self.T[0,:,:] \
@@ -315,6 +317,7 @@ def intT(self,delt):
                     +  self.Kh*lapT(self,self.T[0,:,:]) \
                     ),self.D[1,:,:]) * self.tmask * delt
 
+#S,D,u,v,dt,entr,Sa,Kh,tmask,delt
 def intS(self,delt):
     """Integrate S"""
     self.S[2,:,:] = self.S[0,:,:] \
@@ -340,19 +343,12 @@ def printdiags(self):
     diag3 = 3600*24*365.25*div0((self.melt*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
     #Minimum thickness
     diag4 = np.where(self.tmask==0,100,self.D[1,:,:]).min()
-    #Volume tendency [Sv]
-    #diag5 = 1e-6*((self.D[2,:,:]-self.D[0,:,:])*self.tmask*self.dx*self.dy).sum()/2/self.dt.values
-    #Integrated melt flux [Sv]
-    #diag6 = 1e-6*(self.melt*self.dx*self.dy).sum().values
-    #Integrated entrainment [Sv]
-    #diag7 = 1e-6*(self.entr*self.dx*self.dy).sum().values
     #Integrated volume thickness convergence == net in/outflow [Sv]
-    diag8 = 1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
+    diag5 = 1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
     #Maximum velocity [m/s]
-    diag9 = ((im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5).max()
+    diag6 = ((im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5).max()
 
-
-    print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag8:.03f} Sv | Max. vel: {diag9:.03f} m/s')
+    print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag5:.03f} Sv | Max. vel: {diag6:.03f} m/s')
               
     return
 
@@ -386,141 +382,16 @@ def plotpanels(self):
     
     addpanel(self,ax[0,0],(self.u[1,:,:]**2+self.v[1,:,:]**2)**.5,'cmo.speed','Speed',symm=False)
     addpanel(self,ax[1,0],self.drho,'cmo.delta_r','Buoyancy')
-    #addpanel(self,ax[0,0],self.Ta,'cmo.thermal','Ambient temp',symm=False)
-    #addpanel(self,ax[1,0],self.Sa,'cmo.haline','Ambient saln',symm=False)
-    
     addpanel(self,ax[0,1],self.D[1,:,:],'cmo.rain','Plume thickness',symm=False,log=True)
     addpanel(self,ax[1,1],self.zb,'cmo.deep_r','Ice draft',symm=False,stream='orangered')
-    #addpanel(self,ax[1,1],self.dzdx,'cmo.deep_r','Draft slope',symm=False,stream=False)
-        
     addpanel(self,ax[0,2],self.T[1,:,:],'cmo.thermal','Plume temperature',symm=False)          
     addpanel(self,ax[1,2],self.S[1,:,:],'cmo.haline','Plume salinity',symm=False)   
-    #addpanel(self,ax[1,2],self.drho,'cmo.dense','Buoyancy',symm=False)
-            
     addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.curl','Melt',symm=True)
-    #addpanel(self,ax[0,3],3600*24*365.25*self.melt,'cmo.matter','Melt',symm=False)
     addpanel(self,ax[1,3],3600*24*365.25*self.entr,'cmo.turbid','Entraiment',symm=False)                
 
     plt.tight_layout()
     plt.show()
 
-"""Functions for plotting derivaties for debugging purposes"""
-    
-def plotdudt(self):
-    fig,ax = plt.subplots(2,5,figsize=self.figsize,sharex=True,sharey=True)            
-
-    t1 =   -self.u[1,:,:] * ip_t(self,(self.D[2,:,:]-self.D[0,:,:]))/(2*self.dt) 
-    t2 =   convu(self) 
-    t3 =   -self.g*ip_t(self,self.drho*self.D[1,:,:])*(self.Dxm1-self.D[1,:,:])/self.dx * self.tmask*self.tmaskxm1 
-    t4 =   self.g*ip_t(self,self.drho*self.D[1,:,:]*self.dzdx) 
-    t5 =   -.5*self.g*ip_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=1)-self.drho)/self.dx * self.tmask * self.tmaskxm1 
-    t6 =   self.f*ip_t(self,self.D[1,:,:]*jm_(self.v[1,:,:],self.vmask)) 
-    t7 =   -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 
-    t8 =   self.Ah*lapu(self)
-    
-    tt = t1+t2+t3+t4+t5+t6+t7+t8
-    
-    addpanel(self,ax[0,0],1e6*(self.u[1,:,:]) * self.umask,'cmo.curl','U')                                                                    
-    addpanel(self,ax[1,0],1e6*div0(tt,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','dU/dt')
-             
-    addpanel(self,ax[0,1],1e6*div0(t1,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','dD/dt')
-    addpanel(self,ax[1,1],1e6*div0(t2,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','conv')
-             
-    addpanel(self,ax[0,2],1e6*div0(t3,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','dD/dx')
-    addpanel(self,ax[1,2],1e6*div0(t4,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','d z/dx')
-             
-    addpanel(self,ax[0,3],1e6*div0(t5,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','d rho/dx')       
-    addpanel(self,ax[1,3],1e6*div0(t6,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','fV')
-             
-    addpanel(self,ax[0,4],1e6*div0(t7,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','drag')
-    addpanel(self,ax[1,4],1e6*div0(t8,ip_t(self,self.D[1,:,:])) * self.umask,'RdBu_r','lap')         
-
-    plt.tight_layout()
-    plt.show()
-
-
-def plotdTdt(self):
-    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
-    
-    t1 = -self.T[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt)
-    t2 = convT(self,self.D[1,:,:]*self.T[1,:,:]) 
-    t3 = self.entr*self.Ta 
-    t4 = self.melt*(self.Tf - self.L/self.cp) 
-    t5 = self.Kh*lapT(self,self.T[0,:,:])
-    
-    tt = t1+t2+t3+t4+t5
-    
-    addpanel(self,ax[0,0],1e6*div0(tt,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','dT/dt')
-    addpanel(self,ax[1,0],1e6*div0(t1,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','dD/dt')
-            
-    addpanel(self,ax[0,1],1e6*div0(t2,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','conv')
-    addpanel(self,ax[1,1],1e6*div0(t3,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','entr')
-
-    addpanel(self,ax[0,2],1e6*div0(t4,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','melt')
-    addpanel(self,ax[1,2],1e6*div0(t5,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','lap')
-
-    plt.tight_layout()
-    plt.show()
-    
-def plotdSdt(self):
-    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)            
-    
-    t1 = -self.S[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt) 
-    t2 =   convT(self,self.D[1,:,:]*self.S[1,:,:]) 
-    t3 =   self.entr*self.Sa 
-    t4 =   self.Kh*lapT(self,self.S[0,:,:]) 
-    
-    tt = t1+t2+t3+t4
-    
-    addpanel(self,ax[0,0],1e6*div0(tt,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','dS/dt')
-    addpanel(self,ax[1,0],1e6*div0(t1,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','dD/dt')
-            
-    addpanel(self,ax[0,1],1e6*div0(t2,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','conv')
-    addpanel(self,ax[1,1],1e6*div0(t3,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','entr')
-
-    addpanel(self,ax[0,2],1e6*div0(t4,ip_t(self,self.D[1,:,:])) * self.tmask,'RdBu_r','lap')
-
-    plt.tight_layout()
-    plt.show()
-    
-def plotdDdt(self):
-    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)     
-    
-    t1 = convT(self,self.D[1,:,:])
-    t2 = self.melt 
-    t3 = self.entr 
-    
-    tt = t1+t2+t3
-    
-    addpanel(self,ax[0,0],1e6*tt * self.tmask,'RdBu_r','dD/dt')
-    addpanel(self,ax[1,0],1e6*t1 * self.tmask,'RdBu_r','conv')
-            
-    addpanel(self,ax[0,1],1e6*t2 * self.tmask,'RdBu_r','melt')
-    addpanel(self,ax[1,1],1e6*t3 * self.tmask,'RdBu_r','entr')
-
-
-    plt.tight_layout()
-    plt.show()
-    
-def plotextra(self):
-    fig,ax = plt.subplots(2,4,figsize=self.figsize,sharex=True,sharey=True)
-    
-    DN = div0((self.D[1,:,:]*self.tmask + self.Dxm1 + self.Dym1 + self.Dxm1ym1),(self.tmask + self.tmaskxm1 + self.tmaskym1 + self.tmaskxm1ym1))
-    DS = div0((self.D[1,:,:]*self.tmask + self.Dxm1 + self.Dyp1 + self.Dxm1yp1),(self.tmask + self.tmaskxm1 + self.tmaskyp1 + self.tmaskxm1yp1))
-    DE = self.Dxm1                 + self.ocnxm1 * self.D[1,:,:]*self.tmask
-    DW = self.D[1,:,:]*self.tmask  + self.ocn    * self.Dxm1
-    
-    tN = -DN *        ip_(self.v[1,:,:],self.vmask)           *(jp_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*self.grdNu) /self.dy
-    tS =  DS *np.roll(ip_(self.v[1,:,:],self.vmask),1,axis=0) *(jm_(self.u[1,:,:],self.umask)-self.slip*self.u[1,:,:]*self.grdSu) /self.dy
-    tE = -DE *        ip_(self.u[1,:,:],self.umask)           * ip_(self.u[1,:,:],self.umask)                                     /self.dx
-    tW =  DW *        im_(self.u[1,:,:],self.umask)           * im_(self.u[1,:,:],self.umask)                                     /self.dx
-    
-
-    addpanel(self,ax[0,0],1e6*tN,'RdBu_r','N')
-    addpanel(self,ax[1,0],1e6*tS,'RdBu_r','S')
-            
-    addpanel(self,ax[0,1],1e6*tE,'RdBu_r','E')
-    addpanel(self,ax[1,1],1e6*tW,'RdBu_r','W')
     
 def plotmelt(self,filename,figsize,density):
     fig,ax = plt.subplots(1,1,figsize=figsize)            
