@@ -3,22 +3,22 @@ import xarray as xr
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import cmocean as cmo
-from numba import jit
+from numba import jit, float32, float64
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def roll_ym1(X):
     return np.reshape(np.roll(np.ravel(X),-X.shape[1]),X.shape)
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def roll_yp1(X):
     return np.reshape(np.roll(np.ravel(X),X.shape[1]),X.shape)
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def roll_xm1(X):
     return np.transpose(np.reshape(np.roll(np.ravel(np.transpose(X)),-X.shape[0]),(X.shape[1],X.shape[0])))
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def roll_xp1(X):
     return np.transpose(np.reshape(np.roll(np.ravel(np.transpose(X)),X.shape[0]),(X.shape[1],X.shape[0])))
 
@@ -94,11 +94,11 @@ def create_grid(self):
 
 def initialize_vars(self):
     #Major variables. Three arrays for storage of previous timestep, current timestep, and next timestep
-    self.u = np.zeros((3,self.ny,self.nx)).astype('float64')
-    self.v = np.zeros((3,self.ny,self.nx)).astype('float64')
-    self.D = np.zeros((3,self.ny,self.nx)).astype('float64')
-    self.T = np.zeros((3,self.ny,self.nx)).astype('float64')
-    self.S = np.zeros((3,self.ny,self.nx)).astype('float64')
+    self.u = np.zeros((3,self.ny,self.nx))#.astype('float64')
+    self.v = np.zeros((3,self.ny,self.nx))#.astype('float64')
+    self.D = np.zeros((3,self.ny,self.nx))#.astype('float64')
+    self.T = np.zeros((3,self.ny,self.nx))#.astype('float64')
+    self.S = np.zeros((3,self.ny,self.nx))#.astype('float64')
 
     #Draft dz/dx and dz/dy on t-grid
     self.dzdx = np.gradient(self.zb,self.dx,axis=1)
@@ -122,46 +122,46 @@ def initialize_vars(self):
     intS(self,self.dt)
     return
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def div0(a,b):
     return np.where(b>0,a/b,0)
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def im(var):
     """Value at i-1/2 """
     return .5*(var+roll_xp1(var))
     
-#@jit(nopython=True)
+@jit(nopython=True)
 def ip(var):
     """Value at i+1/2"""
     return .5*(var+roll_xm1(var))
 
-#@jit(nopython=True)    
+@jit(nopython=True)    
 def jm(var):
     """Value at j-1/2"""
     return .5*(var+roll_yp1(var))
 
-#@jit(nopython=True)    
+@jit(nopython=True)    
 def jp(var):
     """Value at j+1/2"""
     return .5*(var+roll_ym1(var))
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def im_(var,mask):
     """Value at i-1/2, no gradient across boundary"""
     return div0((var*mask + roll_xp1(var*mask)),(mask+roll_xp1(mask)))
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def ip_(var,mask):
     """Value at i+1/2, no gradient across boundary"""
     return div0((var*mask + roll_xm1(var*mask)),(mask+roll_xm1(mask)))
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def jm_(var,mask):
     """Value at j-1/2, no gradient across boundary"""
     return div0((var*mask + roll_yp1(var*mask)),(mask+roll_yp1(mask)))
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def jp_(var,mask):
     """Value at j+1/2, no gradient across boundary"""
     return div0((var*mask + roll_ym1(var*mask)),(mask+roll_ym1(mask)))
