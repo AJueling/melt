@@ -131,10 +131,10 @@ class SheetModel(ModelConstants):
         #Output
 
         u = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='U')
-        v = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='V')
-        D = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='D')
-        T = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='T')
-        S = xr.DataArray(self.u[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='S')
+        v = xr.DataArray(self.v[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='V')
+        D = xr.DataArray(self.D[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='D')
+        T = xr.DataArray(self.T[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='T')
+        S = xr.DataArray(self.S[1,:,:],dims=['y','x'],coords={'y':self.y,'x':self.x},name='S')
         
         melt = xr.DataArray(self.melt,dims=['y','x'],coords={'y':self.y,'x':self.x},name='melt')
         entr = xr.DataArray(self.entr,dims=['y','x'],coords={'y':self.y,'x':self.x},name='entr')
