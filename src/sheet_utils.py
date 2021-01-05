@@ -181,10 +181,10 @@ def lapu(self):
     Dcent = ip_(self.D[0,:,:],self.tmask)
     var = self.u[0,:,:]
 
-    tN = jp_(Dcent,self.tmask) * (roll_ym1(var)-var)/self.dy**2 * (1-self.ocnym1) - self.slip*Dcent*var*self.grdNu/self.dy**2
-    tS = jm_(Dcent,self.tmask) * (roll_yp1(var)-var)/self.dy**2 * (1-self.ocnyp1) - self.slip*Dcent*var*self.grdSu/self.dy**2  
-    tE = self.Dxm1             * (roll_xm1(var)-var)/self.dx**2 * (1-self.ocnxm1)
-    tW = self.D[0,:,:]         * (roll_xp1(var)-var)/self.dx**2 * (1-self.ocn   )
+    tN = jp_(Dcent,self.tmask)              * (roll_ym1(var)-var)/self.dy**2 * (1-self.ocnym1) - self.slip*Dcent*var*self.grdNu/self.dy**2
+    tS = jm_(Dcent,self.tmask)              * (roll_yp1(var)-var)/self.dy**2 * (1-self.ocnyp1) - self.slip*Dcent*var*self.grdSu/self.dy**2  
+    tE = roll_xm1(self.D[0,:,:]*self.tmask) * (roll_xm1(var)-var)/self.dx**2 * (1-self.ocnxm1)
+    tW = self.D[0,:,:]                      * (roll_xp1(var)-var)/self.dx**2 * (1-self.ocn   )
     
     return (tN+tS+tE+tW) * self.umask
 
@@ -193,10 +193,10 @@ def lapv(self):
     Dcent = jp_(self.D[0,:,:],self.tmask)
     var = self.v[0,:,:]
     
-    tN = self.Dym1             * (roll_ym1(var)-var)/self.dy**2 * (1-self.ocnym1) 
-    tS = self.D[0,:,:]         * (roll_yp1(var)-var)/self.dy**2 * (1-self.ocn   )
-    tE = ip_(Dcent,self.tmask) * (roll_xm1(var)-var)/self.dx**2 * (1-self.ocnxm1) - self.slip*Dcent*var*self.grdEv/self.dx**2
-    tW = im_(Dcent,self.tmask) * (roll_xp1(var)-var)/self.dx**2 * (1-self.ocnxp1) - self.slip*Dcent*var*self.grdWv/self.dx**2  
+    tN = roll_ym1(self.D[0,:,:]*self.tmask) * (roll_ym1(var)-var)/self.dy**2 * (1-self.ocnym1) 
+    tS = self.D[0,:,:]                      * (roll_yp1(var)-var)/self.dy**2 * (1-self.ocn   )
+    tE = ip_(Dcent,self.tmask)              * (roll_xm1(var)-var)/self.dx**2 * (1-self.ocnxm1) - self.slip*Dcent*var*self.grdEv/self.dx**2
+    tW = im_(Dcent,self.tmask)              * (roll_xp1(var)-var)/self.dx**2 * (1-self.ocnxp1) - self.slip*Dcent*var*self.grdWv/self.dx**2  
     
     return (tN+tS+tE+tW) * self.vmask
 
