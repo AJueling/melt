@@ -172,10 +172,10 @@ def lapu(self):
     Dcent = ip_t(self,self.D[0,:,:])
     var = self.u[0,:,:]
 
-    tN = jp_t(self,Dcent) * (np.roll(var,-1,axis=0)-var)/self.dy**2 * (1-self.ocnym1) - self.slip*Dcent*var*self.grdNu/self.dy**2
-    tS = jm_t(self,Dcent) * (np.roll(var, 1,axis=0)-var)/self.dy**2 * (1-self.ocnyp1) - self.slip*Dcent*var*self.grdSu/self.dy**2  
-    tE = self.Dxm1        * (np.roll(var,-1,axis=1)-var)/self.dx**2 * (1-self.ocnxm1)
-    tW = self.D[0,:,:]    * (np.roll(var, 1,axis=1)-var)/self.dx**2 * (1-self.ocn   )
+    tN = jp_t(self,Dcent)                            * (np.roll(var,-1,axis=0)-var)/self.dy**2 * (1-self.ocnym1) - self.slip*Dcent*var*self.grdNu/self.dy**2
+    tS = jm_t(self,Dcent)                            * (np.roll(var, 1,axis=0)-var)/self.dy**2 * (1-self.ocnyp1) - self.slip*Dcent*var*self.grdSu/self.dy**2  
+    tE = np.roll(self.D[0,:,:]*self.tmask,-1,axis=1) * (np.roll(var,-1,axis=1)-var)/self.dx**2 * (1-self.ocnxm1)
+    tW = self.D[0,:,:]                               * (np.roll(var, 1,axis=1)-var)/self.dx**2 * (1-self.ocn   )
     
     return (tN+tS+tE+tW) * self.umask
 
@@ -184,10 +184,10 @@ def lapv(self):
     Dcent = jp_t(self,self.D[0,:,:])
     var = self.v[0,:,:]
     
-    tN = self.Dym1        * (np.roll(var,-1,axis=0)-var)/self.dy**2 * (1-self.ocnym1) 
-    tS = self.D[0,:,:]    * (np.roll(var, 1,axis=0)-var)/self.dy**2 * (1-self.ocn   )
-    tE = ip_t(self,Dcent) * (np.roll(var,-1,axis=1)-var)/self.dx**2 * (1-self.ocnxm1) - self.slip*Dcent*var*self.grdEv/self.dx**2
-    tW = im_t(self,Dcent) * (np.roll(var, 1,axis=1)-var)/self.dx**2 * (1-self.ocnxp1) - self.slip*Dcent*var*self.grdWv/self.dx**2  
+    tN = np.roll(self.D[1,:,:]*self.tmask,-1,axis=0) * (np.roll(var,-1,axis=0)-var)/self.dy**2 * (1-self.ocnym1) 
+    tS = self.D[0,:,:]                               * (np.roll(var, 1,axis=0)-var)/self.dy**2 * (1-self.ocn   )
+    tE = ip_t(self,Dcent)                            * (np.roll(var,-1,axis=1)-var)/self.dx**2 * (1-self.ocnxm1) - self.slip*Dcent*var*self.grdEv/self.dx**2
+    tW = im_t(self,Dcent)                            * (np.roll(var, 1,axis=1)-var)/self.dx**2 * (1-self.ocnxp1) - self.slip*Dcent*var*self.grdWv/self.dx**2  
     
     return (tN+tS+tE+tW) * self.vmask
 
