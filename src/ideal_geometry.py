@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import xarray as xr
 
@@ -9,6 +10,8 @@ cases = ['plumeref',  # reference 1D case for Plume model
          'test1',     # constant slope, constant u, v=0
          'test2',     # same as test 1 but in y direction
          'test3',     # sinusoidal grounding line
+         'Ocean1',    # ISOMIP+ initial steady state position
+         'Ocean2',    # ISOMIP+ retreated position
          ]
 
 
@@ -19,7 +22,8 @@ class IdealGeometry(ModelConstants):
         ds  (xr.Dataset)             containing:
             draft    (x,y)    [m]    vertical position of ice shelf base  (<=0)
             p        (x,y)    [Pa]   hydrostatic pressure
-            mask     (x,y)    [int]  [0] ocean, [1] grounded ice, [3] ice shelf; like BedMachine dataset
+            mask     (x,y)    [int]  [0] ocean, [1] grounded ice, [3] ice shelf
+                                     (like BedMachine dataset)
             dgrl     (x,y)    [m]    distance to grounding line, needed for PICO/P boxes
             alpha    (x,y)    [rad]  local angle, needed for Plume and PICOP
             grl_adv  (x,y)    [m]    advected grounding line depth, needed for Plume and PICOP
@@ -79,7 +83,6 @@ class IdealGeometry(ModelConstants):
             for k in np.arange(1,n+1):
                 A[k] = area.where(ds.box==k).sum(['x','y'])  
             da = xr.DataArray(data=A, dims='boxnr', coords={'boxnr':np.arange(n+1)})
-            da.attrs = {'long_name':'area per box', 'units':'m^2'}
             return da
 
         if case==1:
@@ -138,6 +141,39 @@ class IdealGeometry(ModelConstants):
         self.ds = ds
         return self.ds
 
+    def isomip_geometry(self, case):
+        """ generate geometry file from ISOMIP netcdfs """
+        fn = f'../data/isomip/Ocean{case}_input_geom_v1.01.nc'
+        if os.path.exists(fn):
+            dsi = xr.open_dataset(fn)
+        elif os.path.exists('../'+fn):  # if called from `src/ipynb` folder
+            dsi = xr.open_dataset('../'+fn)
+        else:
+            print('ISOMIP `Ocean{case}` file does not exist')
+        ds = xr.Dataset(coords={'x':('x',np.arange(416_000,641_000,500.)),
+                        'y':('y',np.arange(250,80_000,500.)),
+                        'boxnr':('boxnr',np.arange(self.n+1))},
+                       )
+        ds['draft'] = dsi.lowerSurface.interp_like(ds)
+        ds['mask'] = (dsi.groundedMask + 3*dsi.floatingMask).interp_like(ds,method='nearest').astype(int)
+        ds.mask[[0,-1],:] = ds.mask[[1,-2],:].values  # otherwise the lateral boundaries have nonsensical values
+        dist = xr.DataArray(dims=('y','x'), coords={'x':ds.x, 'y':ds.y}, data=np.meshgrid(ds.x,ds.y)[0])
+        ds['dgrl'] = dist - xr.where((ds.mask-ds.mask.shift(x=-1))==-2,dist,0).sum('x')
+        ds['disf'] = abs(dist - xr.where((ds.mask-ds.mask.shift(x=-1))== 3,dist,0).sum('x'))
+        ds['alpha'] = (('y','x'), np.gradient(ds.draft.values,500, axis=1))
+        a = xr.where((ds.mask-ds.mask.shift(x=-1))==-2,ds.draft,0).sum('x')
+        ds['grl_adv'] = (('y','x'), np.tile(a,len(ds.x)).reshape((len(ds.x),len(ds.y))).T)
+        rd = ds.dgrl/(ds.dgrl+ds.disf)  # dimensionless relative distance
+        ds['box'] = (('y','x'), np.zeros_like(ds.mask))
+        ds['area_k'] = (('boxnr'), np.zeros(self.n+1))
+        for k in np.arange(1,self.n+1):
+            lb = xr.where(rd>=1-np.sqrt((self.n-k+1)/self.n),1,0)
+            ub = xr.where(rd<=1-np.sqrt((self.n-k)  /self.n),1,0)
+            ds.box.values += xr.where(ub*lb==1, k, 0).values
+            ds.area_k[k] = (ds.x[1]-ds.x[0])*(ds.y[1]-ds.y[0]).where(ds.box==k).sum()
+        ds.area_k[0] = ds.area_k[1:].sum()
+        return ds
+
     def create(self):
         """ function to return geometry dataset """
 
@@ -152,6 +188,9 @@ class IdealGeometry(ModelConstants):
         elif self.name[:4]=='test':
             case = int(self.name[4:])
             self.ds = self.test_geometry(case=case)
+        elif self.name[:5]=='Ocean':
+            case = int(self.name[5:])
+            self.ds = self.isomip_geometry(case=case)
 
         self.ds['p'] = abs(self.ds.draft)*self.rho0*self.g  # assuming constant density
         self.ds['n'] = self.n
@@ -163,6 +202,7 @@ class IdealGeometry(ModelConstants):
         self.ds.grl_adv.attrs = {'long_name':'advected grounding line depth / plume origin depth', 'units':'m'}
         self.ds.p.attrs       = {'long_name':'hydrostatic pressure', 'units':'Pa'}  
         self.ds.n.attrs       = {'long_name':'box number; 0 is ambient'}
+        self.ds.area_k.attrs  = {'long_name':'area per box', 'units':'m^2'}
 
         return self.ds
     
