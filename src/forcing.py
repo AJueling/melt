@@ -96,6 +96,23 @@ class Forcing(ModelConstants):
 
         return self.ds
 
+    def isomip(self,profile):
+        """ linear ISOMIP profiles, temps are potential temperatures"""
+        assert profile in ['WARM','COLD']
+        if profile == 'COLD':
+            z = [-720,0]
+            Tz = [-1.9,-1.9]
+            Sz = [34.55,33.8]
+        elif profile == 'WARM':
+            z = [-720,0]
+            Tz = [1.0,-1.9]
+            Sz = [34.7,33.8]
+        self.ds['Tz'] = np.interp(self.ds.z,z,Tz)
+        self.ds['Sz'] = np.interp(self.ds.z,z,Sz)
+        self.ds = self.calc_fields()
+        self.ds['name_forcing'] = f'ISOMIP_{profile}'
+        return self.ds
+
     def calc_fields(self):
         """ adds Ta/Sa fields to geometry dataset """
         assert 'Tz' in self.ds
@@ -105,7 +122,7 @@ class Forcing(ModelConstants):
         self.ds['Ta'] = (['y', 'x'], Ta)
         self.ds['Sa'] = (['y', 'x'], Sa)
         self.ds['Tf'] = self.l1*self.ds.Sa + self.l2 + self.l3*self.ds.draft
-        self.ds.Ta.attrs      = {'long_name':'ambient temperature', 'units':'degC'}
-        self.ds.Sa.attrs      = {'long_name':'ambient salinity', 'units':'psu'}
-        self.ds.Tf.attrs      = {'long_name':'local freezing point', 'units':'degC'} # from':'Eq. 3 of Favier19'
+        self.ds.Ta.attrs = {'long_name':'ambient temperature', 'units':'degC'}
+        self.ds.Sa.attrs = {'long_name':'ambient salinity', 'units':'psu'}
+        self.ds.Tf.attrs = {'long_name':'local freezing point', 'units':'degC'} # from':'Eq. 3 of Favier19'
         return self.ds
