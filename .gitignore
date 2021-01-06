@@ -2,6 +2,7 @@
 dask-worker-space/
 data/BedMachine/*
 data/IceVelocity/*
+data/isomip/*
 doc/*
 results/*
 src/.DS_Store
@@ -147,3 +148,4 @@ src/sheet_messy.py
 src/ipynb/copy_stripped_notebooks.py
 src/ideal_geometry.py
 src/notebooks/Sheet_common_input.ipynb
+data/bb0448974g_3_1.h5
