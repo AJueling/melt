@@ -151,12 +151,13 @@ class IdealGeometry(ModelConstants):
         else:
             print('ISOMIP `Ocean{case}` file does not exist')
         ds = xr.Dataset(coords={'x':('x',np.arange(416_000,641_000,500.)),
-                        'y':('y',np.arange(250,80_000,500.)),
-                        'boxnr':('boxnr',np.arange(self.n+1))},
+                                'y':('y',np.arange(250,80_000,500.)),
+                                'boxnr':('boxnr',np.arange(self.n+1))},
                        )
         ds['draft'] = dsi.lowerSurface.interp_like(ds)
+        ds.draft[[0,-1],:] = ds.draft[[1,-2],:].values  # otherwise the lateral boundaries have nonsensical values
         ds['mask'] = (dsi.groundedMask + 3*dsi.floatingMask).interp_like(ds,method='nearest').astype(int)
-        ds.mask[[0,-1],:] = ds.mask[[1,-2],:].values  # otherwise the lateral boundaries have nonsensical values
+        ds.mask[[0,-1],:] = 0  # ds.mask[[1,-2],:].values
         dist = xr.DataArray(dims=('y','x'), coords={'x':ds.x, 'y':ds.y}, data=np.meshgrid(ds.x,ds.y)[0])
         ds['dgrl'] = dist - xr.where((ds.mask-ds.mask.shift(x=-1))==-2,dist,0).sum('x')
         ds['disf'] = abs(dist - xr.where((ds.mask-ds.mask.shift(x=-1))== 3,dist,0).sum('x'))
