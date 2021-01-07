@@ -89,8 +89,8 @@ class Forcing(ModelConstants):
             Tz = [1.2,1.2,-1.0,-1.0]
             Sz = [34.5,34.5,34,34]
             
-        self.ds['Tz'] = np.interp(self.ds.z,z,Tz)
-        self.ds['Sz'] = np.interp(self.ds.z,z,Sz)
+        self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
+        self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
         self.ds = self.calc_fields()
         self.ds['name_forcing'] = f'favier_{profile}'
 
