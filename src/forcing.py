@@ -13,11 +13,11 @@ class Forcing(ModelConstants):
 
         output:
         self.ds  (xr.Dataset)  original `ds` with additional fields:
-            Tz   (z)   [degC]  ambient in-sity temperature
+            Tz   (z)   [degC]  ambient in-situ temperature
             Sz   (z)   [psu]   ambient salinity
 
             Plume/Sheet/Simple:  spatially extended ambient T/S fields
-            Ta   (x,y) [degC]  ambient in-sity temperature
+            Ta   (x,y) [degC]  ambient in-situ temperature
             Sa   (x,y) [psu]   ambient salinity
 
             PICO/PICOP:        single temperature/salinity values for  model
@@ -97,7 +97,9 @@ class Forcing(ModelConstants):
         return self.ds
 
     def isomip(self,profile):
-        """ linear ISOMIP profiles, temps are potential temperatures"""
+        """ linear ISOMIP profiles,
+        temperatures are given as potential temperatures
+        """
         assert profile in ['WARM','COLD']
         if profile == 'COLD':
             z = [-720,0]
@@ -122,7 +124,14 @@ class Forcing(ModelConstants):
         self.ds['Ta'] = (['y', 'x'], Ta)
         self.ds['Sa'] = (['y', 'x'], Sa)
         self.ds['Tf'] = self.l1*self.ds.Sa + self.l2 + self.l3*self.ds.draft
-        self.ds.Ta.attrs = {'long_name':'ambient temperature', 'units':'degC'}
+        self.ds.Ta.attrs = {'long_name':'ambient in-situ temperature', 'units':'degC'}
         self.ds.Sa.attrs = {'long_name':'ambient salinity', 'units':'psu'}
-        self.ds.Tf.attrs = {'long_name':'local freezing point', 'units':'degC'} # from':'Eq. 3 of Favier19'
+        self.ds.Tf.attrs = {'long_name':'local (in-situ) freezing point', 'units':'degC'}  # from:Eq. 3 of Favier19
+        return self.ds
+
+
+    def potential_to_insitu(self):
+        """ convert potential to in-situ temperatures """
+        assert 'Tz' in self.ds
+        self.ds['Tz'] = self.
         return self.ds
