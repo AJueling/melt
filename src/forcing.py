@@ -61,7 +61,7 @@ class Forcing(ModelConstants):
         return self.ds
 
     def favier(self, profile):
-        """ piecewise linear profiles suggested by Favier et al. (2019) """
+        """ piecewise linear profiles suggested by Favier et al. (2019), using potential temperature """
         assert profile in ['cold0', 'cold1', 'warm0', 'warm1', 'warm2', 'warm3']
 
         if profile == 'cold0':
@@ -133,5 +133,5 @@ class Forcing(ModelConstants):
     def potential_to_insitu(self):
         """ convert potential to in-situ temperatures """
         assert 'Tz' in self.ds
-        self.ds['Tz'] = self.
+        # self.ds['Tz'] = self.
         return self.ds

@@ -156,6 +156,7 @@ class IdealGeometry(ModelConstants):
                        )
         ds['draft'] = dsi.lowerSurface.interp_like(ds)
         ds.draft[[0,-1],:] = ds.draft[[1,-2],:].values  # otherwise the lateral boundaries have nonsensical values
+        ds.draft[:,-2] = ds.draft[:,-3] + (ds.draft[:,-3]-ds.draft[:,-4])/(ds.x[1]-ds.x[0])  # second to last row interpolated between sea level and draft
         ds['mask'] = (dsi.groundedMask + 3*dsi.floatingMask).interp_like(ds,method='nearest').astype(int)
         ds.mask[[0,-1],:] = 0  # ds.mask[[1,-2],:].values
         dist = xr.DataArray(dims=('y','x'), coords={'x':ds.x, 'y':ds.y}, data=np.meshgrid(ds.x,ds.y)[0])
