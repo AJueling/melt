@@ -13,18 +13,18 @@ class Forcing(ModelConstants):
 
         output:
         self.ds  (xr.Dataset)  original `ds` with additional fields:
-            Tz   (z)   [degC]  ambient in-situ temperature
+            Tz   (z)   [degC]  ambient potential temperature
             Sz   (z)   [psu]   ambient salinity
 
             Plume/Sheet/Simple:  spatially extended ambient T/S fields
-            Ta   (x,y) [degC]  ambient in-situ temperature
+            Ta   (x,y) [degC]  ambient potential temperature
             Sa   (x,y) [psu]   ambient salinity
 
             PICO/PICOP:        single temperature/salinity values for  model
             TaD  ()    [degC]  temperature at deepest part of grounding line
             Ta5  ()    [degC]  temperature at 500 m
             Ta7  ()    [degC]  temperature at 700 m
-            TaL  ()    [degC]  temperature at 700 m
+            TaL  ()    [degC]  temperature at 
         """
         assert 'draft' in ds
         self.ds = ds
@@ -109,10 +109,22 @@ class Forcing(ModelConstants):
             z = [-720,0]
             Tz = [1.0,-1.9]
             Sz = [34.7,33.8]
-        self.ds['Tz'] = np.interp(self.ds.z,z,Tz)
-        self.ds['Sz'] = np.interp(self.ds.z,z,Sz)
+        self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
+        self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
         self.ds = self.calc_fields()
         self.ds['name_forcing'] = f'ISOMIP_{profile}'
+        return self.ds
+
+    def isomip_frac(self,frac):
+        """ linear interpolation between ISOMIP COLD and WARM profiles """
+        assert frac>=0 and frac<=1
+        z = [-720,0]
+        Tz = frac*np.array([-1.9,-1.9])  + (1-frac)*np.array([1.0,-1.9])
+        Sz = frac*np.array([34.55,33.8]) + (1-frac)*np.array([34.7,33.8])
+        self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
+        self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
+        self.ds = self.calc_fields()
+        self.ds['name_forcing'] = f'ISOMIP_{frac}'
         return self.ds
 
     def calc_fields(self):
