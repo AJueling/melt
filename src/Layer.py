@@ -125,7 +125,7 @@ class LayerModel(ModelConstants):
         self.ds['mmax'] = 3600*24*365.25*self.melt.max()
         
         self.ds['name_model'] = 'Layer'
-        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geometry'].values}_{self.ds['name_forcing'].values}"
+        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds['name_forcing'].values}"
         self.ds.to_netcdf(f"{self.ds['filename'].values}.nc")
         print('-----------------------------')
         print(f"Output saved as {self.ds['filename'].values}.nc")
