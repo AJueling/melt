@@ -53,11 +53,13 @@ class LayerModel(ModelConstants):
         self.days = 6         # Total runtime in days
         self.nu = .5          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
-        self.Ah = 100         # Laplacian viscosity [m^2/s]
+        self.Ah = 150         # Laplacian viscosity [m^2/s]
         self.dt = 60          # Time step [s]
-        self.Kh = 10          # Diffusivity [m^2/s]
+        self.Kh = 5           # Diffusivity [m^2/s]
         
         self.minD = 1.        # Cutoff thickness [m]
+        self.vcut = .5        # Velocity above which drag is increased [m/s]
+        self.Cdfac = 50       # Magnification factor of drag on velocity above vcut
         
         #Some parameters for displaying output
         self.diagint = 100    # Timestep at which to print diagnostics
@@ -388,6 +390,8 @@ def intD(self,delt):
                     ) * self.tmask * delt
 
 
+    
+    
 def intu(self,delt):
     """Integrate u"""
     self.u[2,:,:] = self.u[0,:,:] \
@@ -397,6 +401,7 @@ def intu(self,delt):
                     +  self.g*ip_t(self,self.drho*self.D[1,:,:]*self.dzdx) \
                     +  -.5*self.g*ip_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=1)-self.drho)/self.dx * self.tmask * self.tmaskxm1 \
                     +  self.f*ip_t(self,self.D[1,:,:]*jm_(self.v[1,:,:],self.vmask)) \
+                    #+  -self.Cd* (self.u[1,:,:] + self.Cdfac*np.maximum(0,np.abs(self.u[1,:,:])-self.vcut)*np.sign(self.u[1,:,:]))  *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
                     +  -self.Cd*self.u[1,:,:]*(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
                     +  self.Ah*lapu(self)
                     ),ip_t(self,self.D[1,:,:])) * self.umask * delt
@@ -410,6 +415,7 @@ def intv(self,delt):
                     + self.g*jp_t(self,self.drho*self.D[1,:,:]*self.dzdy) \
                     + -.5*self.g*jp_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=0)-self.drho)/self.dy * self.tmask * self.tmaskym1 \
                     + -self.f*jp_t(self,self.D[1,:,:]*im_(self.u[1,:,:],self.umask)) \
+                    #+ -self.Cd* (self.v[1,:,:] + self.Cdfac*np.maximum(0,np.abs(self.v[1,:,:])-self.vcut)*np.sign(self.v[1,:,:])) *(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5 \
                     + -self.Cd*self.v[1,:,:]*(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5 \
                     + self.Ah*lapv(self)
                     ),jp_t(self,self.D[1,:,:])) * self.vmask * delt

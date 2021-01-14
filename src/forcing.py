@@ -40,7 +40,7 @@ class Forcing(ModelConstants):
         self.ds['name_forcing'] = f'const_Ta{Ta}_Sa{Sa}'
         return self.ds
 
-    def tanh(self, ztcl, Tdeep, drhodz=0.0001):
+    def tanh(self, ztcl, Tdeep, drhodz=0.0000):
         """ creates tanh thermocline forcing profile
         input:
         ztcl    ..  (float)  [m]       thermocline depth
