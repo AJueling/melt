@@ -34,14 +34,14 @@ class ModelConstants(object):
 
         
         # Plume model (from Table 1)
-        self.l1     = -5.73e-2  # [degC]      freezing point salinity coefficient
+        self.l1     = -5.73e-2  # [degC/psu]  freezing point salinity coefficient
         self.l2     = 8.32e-2   # [degC]      freezing point offset
         self.l3     = 7.61e-4   # [degC/m]    freezing point depth coefficient
         self.Ce     = 0.6       # [1]         slope correction factor
         self.E0     = 3.6e-2    # [1]         entrainment coefficient
         self.CG     = 5.9e-4    # [1]         effective thermal Stanton number
         self.ct     = 1.4e-5    # [1]         c_{tau}
-        self.bs     = 7.86e-4   # [1/psu]     haline coontraction coefficient 
+        self.bs     = 7.86e-4   # [1/psu]     haline contraction coefficient 
         self.Cd     = 2.5e-3    # [1]         drag coefficient
         self.cr1    = 2e2       # [1]         c_{\rho 1}
         return

@@ -174,6 +174,7 @@ class IdealGeometry(ModelConstants):
             ds.box.values += xr.where(ub*lb==1, k, 0).values
             ds.area_k[k] = (ds.x[1]-ds.x[0])*(ds.y[1]-ds.y[0]).where(ds.box==k).sum()
         ds.area_k[0] = ds.area_k[1:].sum()
+        ds.attrs['name_geometry'] = f'ISOMIP_Ocean{case}'
         return ds
 
     def create(self):

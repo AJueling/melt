@@ -37,7 +37,7 @@ class Forcing(ModelConstants):
         self.ds['Tz'] = Ta*np.ones_like(self.ds.z.values)
         self.ds['Sz'] = Sa*np.ones_like(self.ds.z.values)
         self.ds = self.calc_fields()
-        self.ds['name_forcing'] = f'const_Ta{Ta}_Sa{Sa}'
+        self.ds.attrs['name_forcing'] = f'const_Ta{Ta}_Sa{Sa}'
         return self.ds
 
     def tanh(self, ztcl, Tdeep, drhodz=0.0001):
@@ -57,7 +57,7 @@ class Forcing(ModelConstants):
         self.ds['Tz'] = Tdeep + (self.T0-Tdeep) * (1+np.tanh((self.ds.z-ztcl)/self.z1))/2
         self.ds['Sz'] = self.S0 + self.alpha*(self.ds.Tz-self.T0)/self.beta - drhodz*self.ds.z/(self.beta*self.rho0)
         self.ds = self.calc_fields()
-        self.ds['name_forcing'] = f'tanh_Tdeep{Tdeep}_ztcl{ztcl}'
+        self.ds.attrs['name_forcing'] = f'tanh_Tdeep{Tdeep}_ztcl{ztcl}'
         return self.ds
 
     def favier(self, profile):
@@ -92,7 +92,7 @@ class Forcing(ModelConstants):
         self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
         self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
         self.ds = self.calc_fields()
-        self.ds['name_forcing'] = f'favier_{profile}'
+        self.ds.attrs['name_forcing'] = f'Favier19_{profile}'
 
         return self.ds
 
@@ -112,7 +112,7 @@ class Forcing(ModelConstants):
         self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
         self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
         self.ds = self.calc_fields()
-        self.ds['name_forcing'] = f'ISOMIP_{profile}'
+        self.ds.attrs['name_forcing'] = f'ISOMIP_{profile}'
         return self.ds
 
     def isomip_frac(self,frac):
@@ -124,21 +124,21 @@ class Forcing(ModelConstants):
         self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
         self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
         self.ds = self.calc_fields()
-        self.ds['name_forcing'] = f'ISOMIP_{frac}'
+        self.ds.attrs['name_forcing'] = f'ISOMIP_{frac}'
         return self.ds
 
     def calc_fields(self):
-        """ adds Ta/Sa fields to geometry dataset """
+        """ adds Ta/Sa fields to geometry dataset: forcing  = frac*COLD + (1-frac)*WARM """
         assert 'Tz' in self.ds
         assert 'Sz' in self.ds
         Sa = np.interp(self.ds.draft.values, self.ds.z.values, self.ds.Sz.values)
         Ta = np.interp(self.ds.draft.values, self.ds.z.values, self.ds.Tz.values)
         self.ds['Ta'] = (['y', 'x'], Ta)
         self.ds['Sa'] = (['y', 'x'], Sa)
-        self.ds['Tf'] = self.l1*self.ds.Sa + self.l2 + self.l3*self.ds.draft
-        self.ds.Ta.attrs = {'long_name':'ambient in-situ temperature', 'units':'degC'}
-        self.ds.Sa.attrs = {'long_name':'ambient salinity', 'units':'psu'}
-        self.ds.Tf.attrs = {'long_name':'local (in-situ) freezing point', 'units':'degC'}  # from:Eq. 3 of Favier19
+        self.ds['Tf'] = self.l1*self.ds.Sa + self.l2 + self.l3*self.ds.draft  # l3 -> potential temperature
+        self.ds.Ta.attrs = {'long_name':'ambient potential temperature' , 'units':'degC'}
+        self.ds.Sa.attrs = {'long_name':'ambient salinity'              , 'units':'psu' }
+        self.ds.Tf.attrs = {'long_name':'local potential freezing point', 'units':'degC'}  # from:Eq. 3 of Favier19
         return self.ds
 
 
