@@ -3,6 +3,7 @@ dask-worker-space/
 data/BedMachine/*
 data/IceVelocity/*
 data/isomip/*
+data/paulholland/*
 doc/*
 results/*
 src/.DS_Store
@@ -12,6 +13,7 @@ src/ipynb/*.ipynb
 src/ipynb/*.nc
 src/ipynb/bilinear*.nc
 src/test.py
+figures/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
