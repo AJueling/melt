@@ -50,7 +50,6 @@ class LayerModel(ModelConstants):
         self.f = -1.37e-4     # Coriolis parameter [1/s]
         
         #Some input params
-        self.days = 6         # Total runtime in days
         self.nu = .8          # Nondimensional factor for Robert Asselin time filter
         self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
         self.Ah = 100         # Laplacian viscosity [m^2/s]
@@ -59,14 +58,12 @@ class LayerModel(ModelConstants):
         
         self.minD = 1.        # Cutoff thickness [m]
         self.vcut = 1.        # Velocity above which drag is increased [m/s]
-        self.Cdfac = 100      # Magnification factor of drag on velocity above vcut
+        self.Cdfac = 1000      # Magnification factor of drag on velocity above vcut
         
         #Some parameters for displaying output
         self.diagint = 100    # Timestep at which to print diagnostics
-        self.figsize = (15,10)
         self.verbose = True
 
-        
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
         intD(self,2*self.dt)
@@ -95,11 +92,13 @@ class LayerModel(ModelConstants):
         updatesecondary(self)
         return
     
-    def compute(self):
+    def compute(self,days=12):
         create_mask(self)
         create_grid(self)
         initialize_vars(self)
 
+        self.nt = int(days*24*3600/self.dt)+1    # Number of time steps
+        self.time = np.linspace(0,days,self.nt)  # Time in days
         for self.t in range(self.nt):
             self.updatevars()
             self.integrate()
@@ -194,10 +193,6 @@ def create_grid(self):
     self.xu = self.x+self.dx
     self.yv = self.y+self.dy
 
-    #Temporal parameters
-    self.nt = int(self.days*24*3600/self.dt)+1    # Number of time steps
-    self.time = np.linspace(0,self.days,self.nt)  # Time in days 
-
     # Assure free-slip is used in 1D simulation
     if (len(self.y)==3 or len(self.x)==3):
         print('1D run, using free slip')
@@ -221,7 +216,7 @@ def initialize_vars(self):
     self.Ta = np.interp(self.zb,self.z,self.Tz)
     self.Sa = np.interp(self.zb,self.z,self.Sz)   
 
-    self.D += self.minD+.1
+    self.D += self.minD+10.#.1
     for n in range(3):
         self.T[n,:,:] = self.Ta
         self.S[n,:,:] = self.Sa-.1
@@ -402,7 +397,7 @@ def intu(self,delt):
                     +  -.5*self.g*ip_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=1)-self.drho)/self.dx * self.tmask * self.tmaskxm1 \
                     +  self.f*ip_t(self,self.D[1,:,:]*jm_(self.v[1,:,:],self.vmask)) \
                     +  -self.Cd* self.u[1,:,:] *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
-                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.u[1,:,:])-self.vcut)*np.sign(self.u[1,:,:]) *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
+                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.u[1,:,:])-self.vcut)**2*np.sign(self.u[1,:,:]) *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
                     +  self.Ah*lapu(self)
                     ),ip_t(self,self.D[1,:,:])) * self.umask * delt
 
@@ -416,7 +411,7 @@ def intv(self,delt):
                     + -.5*self.g*jp_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=0)-self.drho)/self.dy * self.tmask * self.tmaskym1 \
                     + -self.f*jp_t(self,self.D[1,:,:]*im_(self.u[1,:,:],self.umask)) \
                     + -self.Cd* self.v[1,:,:] *(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5 \
-                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.v[1,:,:])-self.vcut)*np.sign(self.v[1,:,:]) *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
+                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.v[1,:,:])-self.vcut)**2*np.sign(self.v[1,:,:]) *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
                     + self.Ah*lapv(self)
                     ),jp_t(self,self.D[1,:,:])) * self.vmask * delt
     
