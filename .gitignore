@@ -5,6 +5,7 @@ data/IceVelocity/*
 data/isomip/*
 data/paulholland/*
 data/davidshean/*
+data/goldberg/*
 doc/*
 results/*
 src/.DS_Store
