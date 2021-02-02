@@ -57,7 +57,7 @@ class Forcing(ModelConstants):
         self.ds['Tz'] = Tdeep + (self.T0-Tdeep) * (1+np.tanh((self.ds.z-ztcl)/self.z1))/2
         self.ds['Sz'] = self.S0 + self.alpha*(self.ds.Tz-self.T0)/self.beta - drhodz*self.ds.z/(self.beta*self.rho0)
         self.ds = self.calc_fields()
-        self.ds.attrs['name_forcing'] = f'tanh_Tdeep{Tdeep}_ztcl{ztcl}'
+        self.ds.attrs['name_forcing'] = f'tanh_Tdeep{Tdeep:.1f}_ztcl{ztcl}'
         return self.ds
 
     def favier(self, profile):

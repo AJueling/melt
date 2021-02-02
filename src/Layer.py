@@ -57,8 +57,7 @@ class LayerModel(ModelConstants):
         self.Kh = 5           # Diffusivity [m^2/s]
         
         self.minD = 1.        # Cutoff thickness [m]
-        self.vcut = 2.        # Cutoff velocity U and V [m/s]
-        self.Cdfac = 1000      # Magnification factor of drag on velocity above vcut
+        self.vcut = 1.414     # Cutoff velocity U and V [m/s]
         
         #Some parameters for displaying output
         self.diagint = 100    # Timestep at which to print diagnostics
@@ -127,6 +126,7 @@ class LayerModel(ModelConstants):
         
         self.ds['tmask'] = (['y','x'], self.tmask)
         
+        self.ds['entr'] = (['y','x'], 3600*24*365.25*self.entr)
         self.ds['melt'] = (['y','x'], 3600*24*365.25*self.melt)
         self.ds['mav'] = 3600*24*365.25*(self.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()
         self.ds['mmax'] = 3600*24*365.25*self.melt.max()
@@ -225,7 +225,7 @@ def initialize_vars(self):
     self.Ta = np.interp(self.zb,self.z,self.Tz)
     self.Sa = np.interp(self.zb,self.z,self.Sz)   
 
-    self.D += self.minD+10.#.1
+    self.D += self.minD+10.
     for n in range(3):
         self.T[n,:,:] = self.Ta
         self.S[n,:,:] = self.Sa-.1
@@ -327,6 +327,14 @@ def lapv(self):
 
 def convT(self,var):
     """Upstream convergence scheme for D, DT, DS"""
+    tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*(np.roll(var,-1,axis=0)*self.tmaskym1+var*self.ocnym1)) / self.dy * self.vmask
+    tS =   (np.maximum(self.vyp1    ,0)*(np.roll(var,1,axis=0)*self.tmaskyp1+var*self.ocnyp1) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
+    tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*(np.roll(var,-1,axis=1)*self.tmaskxm1+var*self.ocnxm1)) / self.dx * self.umask
+    tW =   (np.maximum(self.uxp1    ,0)*(np.roll(var,1,axis=1)*self.tmaskxp1+var*self.ocnxp1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
+    return (tN+tS+tE+tW) * self.tmask
+
+def convT2(self,var):
+    """Upstream convergence scheme for D, DT, DS"""
     tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*np.roll(var,-1,axis=0)) / self.dy * self.vmask
     tS =   (np.maximum(self.vyp1    ,0)*np.roll(var,1,axis=0) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
     tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*np.roll(var,-1,axis=1)) / self.dx * self.umask
@@ -388,13 +396,10 @@ def updatesecondary(self):
 def intD(self,delt):
     """Integrate D"""
     self.D[2,:,:] = self.D[0,:,:] \
-                    + (convT(self,self.D[1,:,:]) \
+                    + (convT2(self,self.D[1,:,:]) \
                     +  self.melt \
                     +  self.entr \
-                    ) * self.tmask * delt
-
-
-    
+                    ) * self.tmask * delt    
     
 def intu(self,delt):
     """Integrate u"""
@@ -406,7 +411,6 @@ def intu(self,delt):
                     +  -.5*self.g*ip_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=1)-self.drho)/self.dx * self.tmask * self.tmaskxm1 \
                     +  self.f*ip_t(self,self.D[1,:,:]*jm_(self.v[1,:,:],self.vmask)) \
                     +  -self.Cd* self.u[1,:,:] *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
-                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.u[1,:,:])-self.vcut)**2*np.sign(self.u[1,:,:]) *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
                     +  self.Ah*lapu(self)
                     ),ip_t(self,self.D[1,:,:])) * self.umask * delt
 
@@ -420,7 +424,6 @@ def intv(self,delt):
                     + -.5*self.g*jp_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=0)-self.drho)/self.dy * self.tmask * self.tmaskym1 \
                     + -self.f*jp_t(self,self.D[1,:,:]*im_(self.u[1,:,:],self.umask)) \
                     + -self.Cd* self.v[1,:,:] *(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5 \
-                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.v[1,:,:])-self.vcut)**2*np.sign(self.v[1,:,:]) *(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5 \
                     + self.Ah*lapv(self)
                     ),jp_t(self,self.D[1,:,:])) * self.vmask * delt
     
@@ -428,7 +431,7 @@ def intT(self,delt):
     """Integrate T"""
     self.T[2,:,:] = self.T[0,:,:] \
                     +div0((-self.T[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt) \
-                    +  convT(self,self.D[1,:,:]*self.T[1,:,:]) \
+                    +  convT2(self,self.D[1,:,:]*self.T[1,:,:]) \
                     +  self.entr*self.Ta \
                     +  self.melt*(self.Tf - self.L/self.cp) \
                     +  self.Kh*lapT(self,self.T[0,:,:]) \
@@ -438,7 +441,7 @@ def intS(self,delt):
     """Integrate S"""
     self.S[2,:,:] = self.S[0,:,:] \
                     +div0((-self.S[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt) \
-                    +  convT(self,self.D[1,:,:]*self.S[1,:,:]) \
+                    +  convT2(self,self.D[1,:,:]*self.S[1,:,:]) \
                     +  self.entr*self.Sa \
                     +  self.Kh*lapT(self,self.S[0,:,:]) \
                     ),self.D[1,:,:]) * self.tmask * delt
