@@ -57,7 +57,7 @@ class LayerModel(ModelConstants):
         self.Kh = 5           # Diffusivity [m^2/s]
         
         self.minD = 1.        # Cutoff thickness [m]
-        self.vcut = 1.        # Velocity above which drag is increased [m/s]
+        self.vcut = 2.        # Cutoff velocity U and V [m/s]
         self.Cdfac = 1000      # Magnification factor of drag on velocity above vcut
         
         #Some parameters for displaying output
@@ -103,7 +103,13 @@ class LayerModel(ModelConstants):
             self.updatevars()
             self.integrate()
             self.timefilter()
+            
             self.D = np.where(self.D<self.minD,self.minD,self.D)
+            self.u = np.where(self.u>self.vcut,self.vcut,self.u)
+            self.u = np.where(self.u<-self.vcut,-self.vcut,self.u)
+            self.v = np.where(self.v>self.vcut,self.vcut,self.v)
+            self.v = np.where(self.v<-self.vcut,-self.vcut,self.v)            
+            
             if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 printdiags(self)
         if self.verbose:
@@ -126,7 +132,7 @@ class LayerModel(ModelConstants):
         self.ds['mmax'] = 3600*24*365.25*self.melt.max()
         
         self.ds['name_model'] = 'Layer'
-        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds['name_forcing'].values}"
+        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}"
         self.ds.to_netcdf(f"{self.ds['filename'].values}.nc")
         print('-----------------------------')
         print(f"Output saved as {self.ds['filename'].values}.nc")
@@ -137,6 +143,9 @@ class LayerModel(ModelConstants):
 def create_mask(self):
 
     #Read mask input
+    #Remove single cavity points
+    self.mask = np.where(np.roll(self.mask,-1,axis=0)+np.roll(self.mask,1,axis=0)+np.roll(self.mask,-1,axis=1)+np.roll(self.mask,1,axis=1)-self.mask==-3,0,self.mask)
+    
     self.tmask = np.where(self.mask==3,1,0)
     self.grd   = np.where(self.mask==2,1,0)
     self.grd   = np.where(self.mask==1,1,self.grd)
@@ -309,7 +318,7 @@ def lapv(self):
     Dcent = jp_t(self,self.D[0,:,:])
     var = self.v[0,:,:]
     
-    tN = np.roll(self.D[1,:,:]*self.tmask,-1,axis=0) * (np.roll(var,-1,axis=0)-var)/self.dy**2 * (1-self.ocnym1) 
+    tN = np.roll(self.D[0,:,:]*self.tmask,-1,axis=0) * (np.roll(var,-1,axis=0)-var)/self.dy**2 * (1-self.ocnym1) 
     tS = self.D[0,:,:]                               * (np.roll(var, 1,axis=0)-var)/self.dy**2 * (1-self.ocn   )
     tE = ip_t(self,Dcent)                            * (np.roll(var,-1,axis=1)-var)/self.dx**2 * (1-self.ocnxm1) - self.slip*Dcent*var*self.grdEv/self.dx**2
     tW = im_t(self,Dcent)                            * (np.roll(var, 1,axis=1)-var)/self.dx**2 * (1-self.ocnxp1) - self.slip*Dcent*var*self.grdWv/self.dx**2  
@@ -411,7 +420,7 @@ def intv(self,delt):
                     + -.5*self.g*jp_t(self,self.D[1,:,:])**2*(np.roll(self.drho,-1,axis=0)-self.drho)/self.dy * self.tmask * self.tmaskym1 \
                     + -self.f*jp_t(self,self.D[1,:,:]*im_(self.u[1,:,:],self.umask)) \
                     + -self.Cd* self.v[1,:,:] *(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5 \
-                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.v[1,:,:])-self.vcut)**2*np.sign(self.v[1,:,:]) *(self.u[1,:,:]**2 + ip(jm(self.v[1,:,:]))**2)**.5 \
+                    +  -self.Cd*self.Cdfac* np.maximum(0,np.abs(self.v[1,:,:])-self.vcut)**2*np.sign(self.v[1,:,:]) *(self.v[1,:,:]**2 + jp(im(self.u[1,:,:]))**2)**.5 \
                     + self.Ah*lapv(self)
                     ),jp_t(self,self.D[1,:,:])) * self.vmask * delt
     
@@ -450,9 +459,11 @@ def printdiags(self):
     diag5 = 1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
     #Maximum velocity [m/s]
     diag6 = ((im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5).max()
-    diag7 = np.abs(self.u[1,:,:]).max()
-    diag8 = np.abs(self.v[1,:,:]).max()
+    #diag7 = np.abs(self.u[1,:,:]).max()
+    #diag8 = np.abs(self.v[1,:,:]).max()
+    diag7 = np.where(self.tmask==0,100,self.T[1,:,:]).min()
+    diag8 = np.where(self.tmask==0,100,self.S[1,:,:]).min()
 
-    print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f}m | D_max: {diag0:.03f}m | D_min: {diag4:.03f}m | M_av: {diag3:.03f} m/yr | M_max: {diag2:.03f} m/yr | In/out: {diag5:.03f} Sv | Max. vel: {diag6:.03f} | {diag7:.03f} | {diag8:.03f} m/s')
+    print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f} | D_max: {diag0:.03f} | D_min: {diag4:.03f} | M_av: {diag3:.03f} | M_max: {diag2:.03f} | In/out: {diag5:.03f} | Max. vel: {diag6:.03f} | Max. T: {diag7:.03f} | Max. S: {diag8:.03f}')
               
     return
