@@ -43,7 +43,7 @@ def plotnormmelt(ax,lon,lat,melt):
 
 def plotdiffmelt(ax,lon,lat,melt):
     cmap = plt.get_cmap('cmo.amp')
-    IM = ax.pcolormesh(lon,lat,melt,vmin=0,vmax=100,cmap=cmap,transform=ccrs.PlateCarree())
+    IM = ax.pcolormesh(lon,lat,melt,vmin=0,vmax=50,cmap=cmap,transform=ccrs.PlateCarree())
     return IM
 
 def prettyplot(ds,figsize=(10,10)):

@@ -124,7 +124,7 @@ class Forcing(ModelConstants):
         self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
         self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
         self.ds = self.calc_fields()
-        self.ds.attrs['name_forcing'] = f'ISOMIP_{frac}'
+        self.ds.attrs['name_forcing'] = f'ISOMIP_{frac:.1f}'
         return self.ds
 
     def calc_fields(self):

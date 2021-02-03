@@ -50,19 +50,22 @@ class LayerModel(ModelConstants):
         self.f = -1.37e-4     # Coriolis parameter [1/s]
         
         #Some input params
-        self.nu = .8          # Nondimensional factor for Robert Asselin time filter
-        self.slip = 2         # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
-        self.Ah = 100         # Laplacian viscosity [m^2/s]
-        self.dt = 50          # Time step [s]
-        self.Kh = 5           # Diffusivity [m^2/s]
+        self.nu   = .8          # Nondimensional factor for Robert Asselin time filter
+        self.slip = 2           # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
+        self.Ah   = 6           # Laplacian viscosity [m^2/s]
+        self.Kh   = 1           # Diffusivity [m^2/s]
+        self.dt   = 50          # Time step [s]
         
-        self.minD = 1.        # Cutoff thickness [m]
-        self.vcut = 1.414     # Cutoff velocity U and V [m/s]
+        self.cl   = 0.01        # Parameter for Holland entrainment
+        
+        self.boundop = 2        # Option for boundary conditions D,T,S. [use 1 for isomip]
+        self.minD = 1.          # Cutoff thickness [m]
+        self.vcut = 1.414       # Cutoff velocity U and V [m/s]
         
         #Some parameters for displaying output
-        self.diagint = 100    # Timestep at which to print diagnostics
+        self.diagint = 100      # Timestep at which to print diagnostics
         self.verbose = True
-
+        
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
         intD(self,2*self.dt)
@@ -326,20 +329,19 @@ def lapv(self):
     return (tN+tS+tE+tW) * self.vmask
 
 def convT(self,var):
-    """Upstream convergence scheme for D, DT, DS"""
-    tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*(np.roll(var,-1,axis=0)*self.tmaskym1+var*self.ocnym1)) / self.dy * self.vmask
-    tS =   (np.maximum(self.vyp1    ,0)*(np.roll(var,1,axis=0)*self.tmaskyp1+var*self.ocnyp1) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
-    tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*(np.roll(var,-1,axis=1)*self.tmaskxm1+var*self.ocnxm1)) / self.dx * self.umask
-    tW =   (np.maximum(self.uxp1    ,0)*(np.roll(var,1,axis=1)*self.tmaskxp1+var*self.ocnxp1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
-    return (tN+tS+tE+tW) * self.tmask
-
-def convT2(self,var):
-    """Upstream convergence scheme for D, DT, DS"""
-    tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*np.roll(var,-1,axis=0)) / self.dy * self.vmask
-    tS =   (np.maximum(self.vyp1    ,0)*np.roll(var,1,axis=0) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
-    tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*np.roll(var,-1,axis=1)) / self.dx * self.umask
-    tW =   (np.maximum(self.uxp1    ,0)*np.roll(var,1,axis=1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
-    return (tN+tS+tE+tW) * self.tmask
+        """Upstream convergence scheme for D, DT, DS"""
+        if self.boundop ==1:
+            #Option 1: zero gradient for inflow
+            tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*(np.roll(var,-1,axis=0)*self.tmaskym1+var*self.ocnym1)) / self.dy * self.vmask
+            tS =   (np.maximum(self.vyp1    ,0)*(np.roll(var,1,axis=0)*self.tmaskyp1+var*self.ocnyp1) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
+            tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*(np.roll(var,-1,axis=1)*self.tmaskxm1+var*self.ocnxm1)) / self.dx * self.umask
+            tW =   (np.maximum(self.uxp1    ,0)*(np.roll(var,1,axis=1)*self.tmaskxp1+var*self.ocnxp1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1
+        elif self.boundop ==2:
+            tN = - (np.maximum(self.v[1,:,:],0)*var                   + np.minimum(self.v[1,:,:],0)*np.roll(var,-1,axis=0)) / self.dy * self.vmask
+            tS =   (np.maximum(self.vyp1    ,0)*np.roll(var,1,axis=0) + np.minimum(self.vyp1    ,0)*var                   ) / self.dy * self.vmaskyp1
+            tE = - (np.maximum(self.u[1,:,:],0)*var                   + np.minimum(self.u[1,:,:],0)*np.roll(var,-1,axis=1)) / self.dx * self.umask
+            tW =   (np.maximum(self.uxp1    ,0)*np.roll(var,1,axis=1) + np.minimum(self.uxp1    ,0)*var                   ) / self.dx * self.umaskxp1               
+        return (tN+tS+tE+tW) * self.tmask
 
 def convu(self):
     """Convergence for Du"""
@@ -379,8 +381,10 @@ def updatesecondary(self):
     self.Tf   = (self.l1*self.S[1,:,:]+self.l2+self.l3*self.zb).values
     
     self.drho = (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])) * self.tmask
-    self.entr = self.E0*(np.abs(im(self.u[1,:,:])*self.dzdx + jm(self.v[1,:,:])*self.dzdy)) * self.tmask
     self.melt = self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
+    
+    #self.entr = self.E0*np.maximum(0,(im(self.u[1,:,:])*self.dzdx + jm(self.v[1,:,:])*self.dzdy)) * self.tmask
+    self.entr = self.cl*self.Kh/self.Ah**2*(np.maximum(0,im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2-self.g*self.drho*self.Kh/self.Ah*self.D[1,:,:]))**.5 * self.tmask
     
     self.Dym1    = np.roll(        self.D[1,:,:]*self.tmask,-1,axis=0)
     self.Dyp1    = np.roll(        self.D[1,:,:]*self.tmask, 1,axis=0)
@@ -396,7 +400,7 @@ def updatesecondary(self):
 def intD(self,delt):
     """Integrate D"""
     self.D[2,:,:] = self.D[0,:,:] \
-                    + (convT2(self,self.D[1,:,:]) \
+                    + (convT(self,self.D[1,:,:]) \
                     +  self.melt \
                     +  self.entr \
                     ) * self.tmask * delt    
@@ -431,7 +435,7 @@ def intT(self,delt):
     """Integrate T"""
     self.T[2,:,:] = self.T[0,:,:] \
                     +div0((-self.T[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt) \
-                    +  convT2(self,self.D[1,:,:]*self.T[1,:,:]) \
+                    +  convT(self,self.D[1,:,:]*self.T[1,:,:]) \
                     +  self.entr*self.Ta \
                     +  self.melt*(self.Tf - self.L/self.cp) \
                     +  self.Kh*lapT(self,self.T[0,:,:]) \
@@ -441,7 +445,7 @@ def intS(self,delt):
     """Integrate S"""
     self.S[2,:,:] = self.S[0,:,:] \
                     +div0((-self.S[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt) \
-                    +  convT2(self,self.D[1,:,:]*self.S[1,:,:]) \
+                    +  convT(self,self.D[1,:,:]*self.S[1,:,:]) \
                     +  self.entr*self.Sa \
                     +  self.Kh*lapT(self,self.S[0,:,:]) \
                     ),self.D[1,:,:]) * self.tmask * delt
@@ -464,8 +468,8 @@ def printdiags(self):
     diag6 = ((im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5).max()
     #diag7 = np.abs(self.u[1,:,:]).max()
     #diag8 = np.abs(self.v[1,:,:]).max()
-    diag7 = np.where(self.tmask==0,100,self.T[1,:,:]).min()
-    diag8 = np.where(self.tmask==0,100,self.S[1,:,:]).min()
+    diag7 = np.where(self.tmask==0,-100,self.T[1,:,:]).max()
+    diag8 = np.where(self.tmask==0,-100,self.S[1,:,:]).max()
 
     print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f} | D_max: {diag0:.03f} | D_min: {diag4:.03f} | M_av: {diag3:.03f} | M_max: {diag2:.03f} | In/out: {diag5:.03f} | Max. vel: {diag6:.03f} | Max. T: {diag7:.03f} | Max. S: {diag8:.03f}')
               
