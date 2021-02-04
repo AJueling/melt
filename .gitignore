@@ -6,6 +6,7 @@ data/isomip/*
 data/paulholland/*
 data/davidshean/*
 data/goldberg/*
+data/berger/*
 doc/*
 results/*
 src/.DS_Store

@@ -56,7 +56,12 @@ class LayerModel(ModelConstants):
         self.Kh   = 1           # Diffusivity [m^2/s]
         self.dt   = 50          # Time step [s]
         
-        self.cl   = 0.01        # Parameter for Holland entrainment
+        self.cl   = 0.0245      # Parameter for Holland entrainment
+        self.utide = 0.01       # RMS tidal velocity [m/s]
+        self.Pr   = 13.8        # Prandtl number
+        self.Sc   = 2432.       # Schmidt number
+        self.nu0  = 1.95e-6     # Molecular viscosity [m^2/s]
+        self.rhofw = 1000.      # Density of freshwater [kg/m^3]
         
         self.boundop = 2        # Option for boundary conditions D,T,S. [use 1 for isomip]
         self.minD = 1.          # Cutoff thickness [m]
@@ -381,8 +386,17 @@ def updatesecondary(self):
     self.Tf   = (self.l1*self.S[1,:,:]+self.l2+self.l3*self.zb).values
     
     self.drho = (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])) * self.tmask
-    self.melt = self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
     
+    #self.melt = self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
+    
+    self.ustar = (self.Cd*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2+self.utide**2))**.5 * self.tmask
+    self.gamT = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0)+12.5*self.Pr**(2./3)-8.68) * self.tmask
+    self.gamS = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0)+12.5*self.Sc**(2./3)-8.68) * self.tmask
+    self.That = (self.T[1,:,:]-self.l2-self.l3*self.zb).values * self.tmask
+    self.Chat = self.cp*self.gamT/self.L
+    self.melt = .5*(self.Chat*self.That - self.gamS + (np.maximum((self.gamS+self.Chat*self.That)**2 - 4*self.gamS*self.Chat*self.l1*self.S[1,:,:],0))**.5) * self.tmask
+    self.Tb   = self.T[1,:,:] - div0(self.melt*self.L,self.cp*self.gamT) * self.tmask
+
     #self.entr = self.E0*np.maximum(0,(im(self.u[1,:,:])*self.dzdx + jm(self.v[1,:,:])*self.dzdy)) * self.tmask
     self.entr = self.cl*self.Kh/self.Ah**2*(np.maximum(0,im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2-self.g*self.drho*self.Kh/self.Ah*self.D[1,:,:]))**.5 * self.tmask
     
@@ -437,7 +451,8 @@ def intT(self,delt):
                     +div0((-self.T[1,:,:] * (self.D[2,:,:]-self.D[0,:,:])/(2*self.dt) \
                     +  convT(self,self.D[1,:,:]*self.T[1,:,:]) \
                     +  self.entr*self.Ta \
-                    +  self.melt*(self.Tf - self.L/self.cp) \
+                    #+  self.melt*(self.Tf - self.L/self.cp) \
+                    +  self.melt*self.Tb - self.gamT*(self.T[1,:,:]-self.Tb) \
                     +  self.Kh*lapT(self,self.T[0,:,:]) \
                     ),self.D[1,:,:]) * self.tmask * delt
 
