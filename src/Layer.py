@@ -145,7 +145,7 @@ class LayerModel(ModelConstants):
         self.ds['tend']   = self.tend
         
         self.ds['name_model'] = 'Layer'
-        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}"
+        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}_{self.tend:.3f}"
         self.ds.to_netcdf(f"{self.ds['filename'].values}.nc")
         print('-----------------------------')
         print(f"Output saved as {self.ds['filename'].values}.nc")
