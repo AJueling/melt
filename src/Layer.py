@@ -99,13 +99,14 @@ class LayerModel(ModelConstants):
         updatesecondary(self)
         return
     
-    def compute(self,days=12,savespinup=False,readspinup=True):
+    def compute(self,days=12,savespinup=False,readspinup=None):
         create_mask(self)
         create_grid(self)
         initialize_vars(self,readspinup)
 
         self.nt = int(days*24*3600/self.dt)+1    # Number of time steps
-        self.time = np.linspace(0,days,self.nt)  # Time in days
+        self.tend = self.tstart+days
+        self.time = np.linspace(self.tstart,self.tend,self.nt)  # Time in days
         for self.t in range(self.nt):
             self.updatevars()
             self.integrate()
@@ -140,15 +141,18 @@ class LayerModel(ModelConstants):
         self.ds['mav'] = 3600*24*365.25*(self.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()
         self.ds['mmax'] = 3600*24*365.25*self.melt.max()
         
+        self.ds['tstart'] = self.tstart
+        self.ds['tend']   = self.tend
+        
         self.ds['name_model'] = 'Layer'
         self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}"
         self.ds.to_netcdf(f"{self.ds['filename'].values}.nc")
         print('-----------------------------')
         print(f"Output saved as {self.ds['filename'].values}.nc")
         if savespinup:
-            self.ds.to_netcdf(f"../../results/spinup/{self.ds['name_geo'].values}.nc")
+            self.ds.to_netcdf(f"../../results/spinup/{self.ds['name_geo'].values}_{self.tend:.3f}.nc")
             print('-----------------------------')
-            print('Saved copy as spinup')            
+            print(f'Saved copy as spinup at day {self.tend:.3f}')            
         print('=============================')
     
         return self.ds
@@ -235,16 +239,18 @@ def initialize_vars(self,readspinup):
     self.dzdy = np.gradient(self.zb,self.dy,axis=0)
 
     #Initial values
-    if readspinup:
-        dsinit = xr.open_dataset(f"../../results/spinup/{self.ds['name_geo'].values}.nc")
+    try:
+        dsinit = xr.open_dataset(f"../../results/spinup/{self.ds['name_geo'].values}_{readspinup:.3f}.nc")
+        self.tstart = dsinit.tend.values
         for n in range(3):
             self.u[n,:,:] = dsinit.u
             self.v[n,:,:] = dsinit.v
             self.D[n,:,:] = dsinit.D
             self.T[n,:,:] = dsinit.T
             self.S[n,:,:] = dsinit.S
-        print('Starting from spinup file')
-    else:    
+        print(f'Starting from spinup file at day {self.tstart:.3f}')
+    except:    
+        self.tstart = 0
         self.Ta = np.interp(self.zb,self.z,self.Tz)
         self.Sa = np.interp(self.zb,self.z,self.Sz)   
 
