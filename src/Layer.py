@@ -54,7 +54,7 @@ class LayerModel(ModelConstants):
         self.slip = 2           # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
         self.Ah   = 6           # Laplacian viscosity [m^2/s]
         self.Kh   = 1           # Diffusivity [m^2/s]
-        self.dt   = 50          # Time step [s]
+        self.dt   = 40          # Time step [s]
         
         self.cl   = 0.0245      # Parameter for Holland entrainment
         self.utide = 0.01       # RMS tidal velocity [m/s]
@@ -99,10 +99,10 @@ class LayerModel(ModelConstants):
         updatesecondary(self)
         return
     
-    def compute(self,days=12):
+    def compute(self,days=12,savespinup=False,readspinup=True):
         create_mask(self)
         create_grid(self)
-        initialize_vars(self)
+        initialize_vars(self,readspinup)
 
         self.nt = int(days*24*3600/self.dt)+1    # Number of time steps
         self.time = np.linspace(0,days,self.nt)  # Time in days
@@ -125,7 +125,8 @@ class LayerModel(ModelConstants):
             printdiags(self)
         
         #Output
-
+        self.ds['u'] = (['y','x'], self.u[1,:,:])
+        self.ds['v'] = (['y','x'], self.v[1,:,:])        
         self.ds['U'] = (['y','x'], im(self.u[1,:,:]))
         self.ds['V'] = (['y','x'], jm(self.v[1,:,:]))
         self.ds['D'] = (['y','x'], self.D[1,:,:])
@@ -144,6 +145,10 @@ class LayerModel(ModelConstants):
         self.ds.to_netcdf(f"{self.ds['filename'].values}.nc")
         print('-----------------------------')
         print(f"Output saved as {self.ds['filename'].values}.nc")
+        if savespinup:
+            self.ds.to_netcdf(f"../../results/spinup/{self.ds['name_geo'].values}.nc")
+            print('-----------------------------')
+            print('Saved copy as spinup')            
         print('=============================')
     
         return self.ds
@@ -217,7 +222,7 @@ def create_grid(self):
 
     return
 
-def initialize_vars(self):
+def initialize_vars(self,readspinup):
     #Major variables. Three arrays for storage of previous timestep, current timestep, and next timestep
     self.u = np.zeros((3,self.ny,self.nx)).astype('float64')
     self.v = np.zeros((3,self.ny,self.nx)).astype('float64')
@@ -230,13 +235,24 @@ def initialize_vars(self):
     self.dzdy = np.gradient(self.zb,self.dy,axis=0)
 
     #Initial values
-    self.Ta = np.interp(self.zb,self.z,self.Tz)
-    self.Sa = np.interp(self.zb,self.z,self.Sz)   
+    if readspinup:
+        dsinit = xr.open_dataset(f"../../results/spinup/{self.ds['name_geo'].values}.nc")
+        for n in range(3):
+            self.u[n,:,:] = dsinit.u
+            self.v[n,:,:] = dsinit.v
+            self.D[n,:,:] = dsinit.D
+            self.T[n,:,:] = dsinit.T
+            self.S[n,:,:] = dsinit.S
+        print('Starting from spinup file')
+    else:    
+        self.Ta = np.interp(self.zb,self.z,self.Tz)
+        self.Sa = np.interp(self.zb,self.z,self.Sz)   
 
-    self.D += self.minD+10.
-    for n in range(3):
-        self.T[n,:,:] = self.Ta
-        self.S[n,:,:] = self.Sa-.1
+        self.D += self.minD+10.
+        for n in range(3):
+            self.T[n,:,:] = self.Ta
+            self.S[n,:,:] = self.Sa-.1
+        print('Starting from noflow')
 
     #Perform first integration step with 1 dt
     updatesecondary(self)

@@ -27,7 +27,20 @@ def makebackground(ax):
     gl = ax.gridlines()
     gl.xlocator = mpl.ticker.FixedLocator(np.arange(-180,179,5))
     gl.ylocator = mpl.ticker.FixedLocator(np.arange(-89,89))
-
+    
+def makebackground2(ax):
+    cmap = plt.get_cmap('ocean')
+    ds = xr.open_dataset('../../data/BedMachineAntarctica_2020-07-15_v02.nc')
+    ds = ds.isel(x=slice(3000,4500),y=slice(6500,9500))
+    mask = xr.where(ds.mask==1,2,ds.mask)
+    #mask[:] = xr.where(mask==1,2,mask)
+    ds = add_lonlat(ds)
+    ax.pcolormesh(ds.lon,ds.lat,mask,cmap=cmap,vmin=-4,vmax=3,transform=ccrs.PlateCarree(),shading='auto')
+    ax.set_extent([227,261,-75.3,-73.1],crs=ccrs.PlateCarree())
+    gl = ax.gridlines()
+    gl.xlocator = mpl.ticker.FixedLocator(np.arange(-180,179,5))
+    gl.ylocator = mpl.ticker.FixedLocator(np.arange(-89,89))    
+    
 def plotmelt(ax,lon,lat,melt):
     cmap = plt.get_cmap('inferno')
     melt = np.where(melt>0,melt,np.nan)
@@ -42,8 +55,8 @@ def plotnormmelt(ax,lon,lat,melt):
     return IM    
 
 def plotdiffmelt(ax,lon,lat,melt):
-    cmap = plt.get_cmap('cmo.amp')
-    IM = ax.pcolormesh(lon,lat,melt,vmin=0,vmax=50,cmap=cmap,transform=ccrs.PlateCarree())
+    cmap = plt.get_cmap('cmo.curl')
+    IM = ax.pcolormesh(lon,lat,melt,vmin=-50,vmax=50,cmap=cmap,transform=ccrs.PlateCarree())
     return IM
 
 def prettyplot(ds,figsize=(10,10)):
@@ -90,7 +103,10 @@ def prettyplot(ds,figsize=(10,10)):
     ax.set_xticks([])
     ax.set_yticks([])
     plt.tight_layout()
-    plt.savefig(f"{ds['filename'].values}.png")
+    
+    fname = f"../../results/figures/{ds['name_model'].values}_{ds['name_geo'].values}_{ds.attrs['name_forcing']}"
+    
+    plt.savefig(f"{fname}.png")
     plt.show()
     
 def plotamundsen(Tdeep,ztcl,flow=False):
@@ -164,6 +180,8 @@ def quickread(name,nc=1,ns=0):
         x0,x1,y0,y1 = 3445,3700,7730,8060
     elif name=='Getz':
         x0,x1,y0,y1 = 3510,4330,8080,9050
+    elif name=='Cosgrove':
+        x0,x1,y0,y1 = 3070,3190,7210,7420  
     elif name=='TottenMU':
         x0,x1,y0,y1 = 10960,11315,8665,9420
     elif name=='Amery':
