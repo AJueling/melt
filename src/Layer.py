@@ -490,24 +490,24 @@ def intS(self,delt):
 def printdiags(self):
     """Print diagnostics at given intervals as defined below"""
     #Maximum thickness
-    diag0 = (self.D[1,:,:]*self.tmask).max()
+    d0 = (self.D[1,:,:]*self.tmask).max()
     #Average thickness [m]
-    diag1 = div0((self.D[1,:,:]*self.tmask*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
+    d1 = div0((self.D[1,:,:]*self.tmask*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
     #Maximum melt rate [m/yr]
-    diag2 = 3600*24*365.25*self.melt.max()
+    d2 = 3600*24*365.25*self.melt.max()
     #Average melt rate [m/yr]
-    diag3 = 3600*24*365.25*div0((self.melt*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
+    d3 = 3600*24*365.25*div0((self.melt*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
     #Minimum thickness
-    diag4 = np.where(self.tmask==0,100,self.D[1,:,:]).min()
+    d4 = np.where(self.tmask==0,100,self.D[1,:,:]).min()
     #Integrated volume thickness convergence == net in/outflow [Sv]
-    diag5 = 1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
-    #Maximum velocity [m/s]
-    diag6 = ((im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5).max()
-    #diag7 = np.abs(self.u[1,:,:]).max()
-    #diag8 = np.abs(self.v[1,:,:]).max()
-    diag7 = np.where(self.tmask==0,-100,self.T[1,:,:]).max()
-    diag8 = np.where(self.tmask==0,-100,self.S[1,:,:]).max()
+    d5 = -1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
+    #Total heat content [TJ]
+    d7 = 1e-12*self.cp*self.rho0*(self.D[1,:,:]*(self.T[1,:,:]+2.)*self.tmask).sum()
+    #Total salt content [Gg]
+    d8 = 1e-9*self.rho0*(self.D[1,:,:]*self.S[1,:,:]*self.tmask).sum()
+    #Total kinetic energy [TJ]
+    d9 = 1e-12*.5*self.rho0*(self.D[1,:,:]*(im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)*self.dx*self.dy).sum()
 
-    print(f'{self.time[self.t]:.03f} days | D_av: {diag1:.03f} | D_max: {diag0:.03f} | D_min: {diag4:.03f} | M_av: {diag3:.03f} | M_max: {diag2:.03f} | In/out: {diag5:.03f} | Max. vel: {diag6:.03f} | Max. T: {diag7:.03f} | Max. S: {diag8:.03f}')
+    print(f'{self.time[self.t]:8.03f} days || {d1:7.03f} | {d0:8.03f} m || {d3: 7.03f} | {d2: 8.03f} m/yr || {d5: 6.03f} Sv || {d9: 8.03f} | {d7: 8.03f} TJ || {d8: 8.03f} Gg')
               
     return
