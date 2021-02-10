@@ -1,6 +1,7 @@
 import numpy as np
 import xarray as xr
 
+from plotfunctions import add_lonlat
 from constants import ModelConstants
 
 class Forcing(ModelConstants):
@@ -141,7 +142,66 @@ class Forcing(ModelConstants):
         self.ds.Tf.attrs = {'long_name':'local potential freezing point', 'units':'degC'}  # from:Eq. 3 of Favier19
         return self.ds
 
+    def holland(self):
+        
+        self.ds = add_lonlat(self.ds)
+        lon3 = self.ds.lon.values
+        lat3 = self.ds.lat.values
+        mask = self.ds.mask.values
+        
+        #Read Holland data
+        timep= slice("1989-1-1","2018-12-31")
+        ds = xr.open_dataset('../../data/paulholland/PAS_851/stateTheta.nc')
+        ds = ds.sel(LONGITUDE=slice(360+np.min(lon3),360+np.max(lon3)),LATITUDE=slice(np.min(lat3),np.max(lat3)),TIME=timep)
+        ds = ds.mean(dim='TIME')
+        lon   = (ds.LONGITUDE-360.).values
+        lat   = (ds.LATITUDE-.05).values
+        dep   = ds.DEPTH.values
+        theta = ds.THETA.values
+        ds.close()
+        ds = xr.open_dataset('../../data/paulholland/PAS_851/stateSalt.nc')
+        ds = ds.sel(LONGITUDE=slice(360+np.min(lon3),360+np.max(lon3)),LATITUDE=slice(np.min(lat3),np.max(lat3)),TIME=timep)
+        ds = ds.mean(dim='TIME')
+        salt  = ds.SALT.values
+        ds.close()
+        
+        #Extrapolate profiles to top and bottom
+        llon,llat = np.meshgrid(lon,lat)
+        Th = theta.copy()
+        Sh = salt.copy()
+        for j,jj in enumerate(lat):
+            for i,ii in enumerate(lon):
+                if Sh[0,j,i] == 0:
+                    k0 = np.argmax(Sh[:,j,i]!=0)
+                    Th[:k0,j,i] = Th[k0,j,i]
+                    Sh[:k0,j,i] = Sh[k0,j,i]
+                if Sh[-1,j,i] == 0:
+                    k1 = np.argmin(Sh[:,j,i]!=0)
+                    Th[k1:,j,i] = Th[k1-1,j,i]
+                    Sh[k1:,j,i] = Sh[k1-1,j,i]
+                if sum(Sh[:,j,i]) == 0:
+                    llon[j,i] = 1e9
+                    llat[j,i] = 1e9
 
+        #Apply nearest neighbour onto model grid
+        depth = np.arange(5000) #depth also used as index, so must be positive with steps of 1
+        Tz = np.zeros((len(depth),mask.shape[0],mask.shape[1]))
+        Sz = np.zeros((len(depth),mask.shape[0],mask.shape[1]))
+        for j in range(mask.shape[0]):
+            for i in range(mask.shape[1]):
+                if mask[j,i] == 3:
+                    dist = (lon3[j,i]-llon)**2+(lat3[j,i]-llat)**2
+                    [j0,i0] = np.argwhere(dist==np.min(dist))[0]
+                    Tz[:,j,i] = np.interp(depth,dep,Th[:,j0,i0])
+                    Sz[:,j,i] = np.interp(depth,dep,Sh[:,j0,i0])
+
+        self.ds = self.ds.assign_coords({'z':depth})
+        self.ds['Tz'] = (['z','y','x'],Tz)
+        self.ds['Sz'] = (['z','y','x'],Sz)
+        self.ds.attrs['name_forcing'] = 'holland'
+        return self.ds
+        
+        
     def potential_to_insitu(self):
         """ convert potential to in-situ temperatures """
         assert 'Tz' in self.ds

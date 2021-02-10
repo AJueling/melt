@@ -44,6 +44,7 @@ class LayerModel(ModelConstants):
         self.z    = ds.z.values
         self.Tz   = ds.Tz.values
         self.Sz   = ds.Sz.values
+        self.ind  = np.indices(self.zb.shape)
 
         #Physical parameters
         ModelConstants.__init__(self)
@@ -251,8 +252,12 @@ def initialize_vars(self,readspinup):
         print(f'Starting from spinup file at day {self.tstart:.3f}')
     except:    
         self.tstart = 0
-        self.Ta = np.interp(self.zb,self.z,self.Tz)
-        self.Sa = np.interp(self.zb,self.z,self.Sz)   
+        if len(self.Tz.shape)==1:
+            self.Ta   = np.interp(self.zb,self.z,self.Tz)
+            self.Sa   = np.interp(self.zb,self.z,self.Sz)
+        elif len(self.Tz.shape)==3:
+            self.Ta = self.Tz[np.int_(-self.zb),self.ind[0],self.ind[1]]
+            self.Sa = self.Sz[np.int_(-self.zb),self.ind[0],self.ind[1]]
 
         self.D += self.minD+10.
         for n in range(3):
@@ -403,8 +408,13 @@ def convv(self):
     return (tN+tS+tE+tW) * self.vmask     
 
 def updatesecondary(self):
-    self.Ta   = np.interp(self.zb-self.D[1,:,:],self.z,self.Tz)
-    self.Sa   = np.interp(self.zb-self.D[1,:,:],self.z,self.Sz)
+    if len(self.Tz.shape)==1:
+        self.Ta   = np.interp(self.zb-self.D[1,:,:],self.z,self.Tz)
+        self.Sa   = np.interp(self.zb-self.D[1,:,:],self.z,self.Sz)
+    elif len(self.Tz.shape)==3:
+        self.Ta = self.Tz[np.int_(-self.zb+self.D[1,:,:]),self.ind[0],self.ind[1]]
+        self.Sa = self.Sz[np.int_(-self.zb+self.D[1,:,:]),self.ind[0],self.ind[1]]
+        
     self.Tf   = (self.l1*self.S[1,:,:]+self.l2+self.l3*self.zb).values
     
     self.drho = (self.beta*(self.Sa-self.S[1,:,:]) - self.alpha*(self.Ta-self.T[1,:,:])) * self.tmask
