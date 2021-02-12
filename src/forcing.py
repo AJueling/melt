@@ -142,7 +142,7 @@ class Forcing(ModelConstants):
         self.ds.Tf.attrs = {'long_name':'local potential freezing point', 'units':'degC'}  # from:Eq. 3 of Favier19
         return self.ds
 
-    def holland(self):
+    def holland(self,option='interp'):
         
         self.ds = add_lonlat(self.ds)
         lon3 = self.ds.lon.values
@@ -172,29 +172,43 @@ class Forcing(ModelConstants):
         for j,jj in enumerate(lat):
             for i,ii in enumerate(lon):
                 if Sh[0,j,i] == 0:
-                    k0 = np.argmax(Sh[:,j,i]!=0)
+                    k0 = np.argmax(Sh[:,j,i]!=0)+2
                     Th[:k0,j,i] = Th[k0,j,i]
                     Sh[:k0,j,i] = Sh[k0,j,i]
                 if Sh[-1,j,i] == 0:
-                    k1 = np.argmin(Sh[:,j,i]!=0)
+                    k1 = np.argmin(Sh[:,j,i]!=0)-1
                     Th[k1:,j,i] = Th[k1-1,j,i]
                     Sh[k1:,j,i] = Sh[k1-1,j,i]
                 if sum(Sh[:,j,i]) == 0:
-                    llon[j,i] = 1e9
-                    llat[j,i] = 1e9
+                    llon[j,i] = 1e36
+                    llat[j,i] = 1e36
 
         #Apply nearest neighbour onto model grid
         depth = np.arange(5000) #depth also used as index, so must be positive with steps of 1
         Tz = np.zeros((len(depth),mask.shape[0],mask.shape[1]))
         Sz = np.zeros((len(depth),mask.shape[0],mask.shape[1]))
+        nsm = 1
         for j in range(mask.shape[0]):
             for i in range(mask.shape[1]):
                 if mask[j,i] == 3:
-                    dist = (lon3[j,i]-llon)**2+(lat3[j,i]-llat)**2
-                    [j0,i0] = np.argwhere(dist==np.min(dist))[0]
-                    Tz[:,j,i] = np.interp(depth,dep,Th[:,j0,i0])
-                    Sz[:,j,i] = np.interp(depth,dep,Sh[:,j0,i0])
-
+                    #Get nearest indices at low end
+                    i0 = np.argmax(lon>lon3[j,i])-1
+                    j0 = np.argmax(lat>lat3[j,i])-1
+                    if option=='interp':
+                        #Distance squared
+                        dist = np.cos(np.pi*lat3[j,i]/180.)*(np.pi*(lon3[j,i]-llon[j0-nsm:j0+2+nsm,i0-nsm:i0+2+nsm])/180.)**2+(np.pi*(lat3[j,i]-llat[j0-nsm:j0+2+nsm,i0-nsm:i0+2+nsm])/180.)**2
+               
+                        weight = 1./(dist+5e-8)
+                        TT = np.sum(Th[:,j0-nsm:j0+2+nsm,i0-nsm:i0+2+nsm]*weight,axis=(1,2))/np.sum(weight)
+                        SS = np.sum(Sh[:,j0-nsm:j0+2+nsm,i0-nsm:i0+2+nsm]*weight,axis=(1,2))/np.sum(weight)
+                    elif option=='nn':
+                        #Direct nearest neighbor:
+                        TT = Th[:,j0,i0]
+                        SS = Sh[:,j0,i0]
+                    
+                    Tz[:,j,i] = np.interp(depth,dep,TT)
+                    Sz[:,j,i] = np.interp(depth,dep,SS)
+        del TT,SS,Th,Sh,theta,salt
         self.ds = self.ds.assign_coords({'z':depth})
         self.ds['Tz'] = (['z','y','x'],Tz)
         self.ds['Sz'] = (['z','y','x'],Sz)

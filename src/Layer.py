@@ -66,7 +66,9 @@ class LayerModel(ModelConstants):
         
         self.boundop = 2        # Option for boundary conditions D,T,S. [use 1 for isomip]
         self.minD = 1.          # Cutoff thickness [m]
+        self.maxD = 1000.       # Cutoff maximum thickness [m]
         self.vcut = 1.414       # Cutoff velocity U and V [m/s]
+        self.Dinit = 10.     # Initial uniform thickness [m]
         
         #Some parameters for displaying output
         self.diagint = 100      # Timestep at which to print diagnostics
@@ -113,7 +115,9 @@ class LayerModel(ModelConstants):
             self.integrate()
             self.timefilter()
             
+            #Cut maximum and minimum values for stability
             self.D = np.where(self.D<self.minD,self.minD,self.D)
+            self.D = np.where(self.D>self.maxD,self.maxD,self.D)
             self.u = np.where(self.u>self.vcut,self.vcut,self.u)
             self.u = np.where(self.u<-self.vcut,-self.vcut,self.u)
             self.v = np.where(self.v>self.vcut,self.vcut,self.v)
@@ -258,10 +262,12 @@ def initialize_vars(self,readspinup):
         elif len(self.Tz.shape)==3:
             self.Ta = self.Tz[np.int_(-self.zb),self.ind[0],self.ind[1]]
             self.Sa = self.Sz[np.int_(-self.zb),self.ind[0],self.ind[1]]
-
-        self.D += self.minD+10.
+            
+        self.Tf   = (self.l1*self.Sa+self.l2+self.l3*self.zb).values
+        
+        self.D += self.Dinit
         for n in range(3):
-            self.T[n,:,:] = self.Ta
+            self.T[n,:,:] = self.Ta-.1
             self.S[n,:,:] = self.Sa-.1
         print('Starting from noflow')
 
@@ -412,8 +418,8 @@ def updatesecondary(self):
         self.Ta   = np.interp(self.zb-self.D[1,:,:],self.z,self.Tz)
         self.Sa   = np.interp(self.zb-self.D[1,:,:],self.z,self.Sz)
     elif len(self.Tz.shape)==3:
-        self.Ta = self.Tz[np.int_(-self.zb+self.D[1,:,:]),self.ind[0],self.ind[1]]
-        self.Sa = self.Sz[np.int_(-self.zb+self.D[1,:,:]),self.ind[0],self.ind[1]]
+        self.Ta = self.Tz[np.int_(np.minimum(4999,-self.zb+self.D[1,:,:])),self.ind[0],self.ind[1]]
+        self.Sa = self.Sz[np.int_(np.minimum(4999,-self.zb+self.D[1,:,:])),self.ind[0],self.ind[1]]
         
     self.Tf   = (self.l1*self.S[1,:,:]+self.l2+self.l3*self.zb).values
     
