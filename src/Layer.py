@@ -58,6 +58,7 @@ class LayerModel(ModelConstants):
         self.dt   = 40          # Time step [s]
         
         self.cl   = 0.0245      # Parameter for Holland entrainment
+        self.Cdfac = 1.         # Multiplication factor for drag in Ustar
         self.utide = 0.01       # RMS tidal velocity [m/s]
         self.Pr   = 13.8        # Prandtl number
         self.Sc   = 2432.       # Schmidt number
@@ -78,7 +79,7 @@ class LayerModel(ModelConstants):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
         intD(self,2*self.dt)
         intu(self,2*self.dt)
-        intv(self,2*self.dt)
+        intv(self,2*self.dt) 
         intT(self,2*self.dt)
         intS(self,2*self.dt)        
         return
@@ -116,13 +117,12 @@ class LayerModel(ModelConstants):
             self.timefilter()
             
             #Cut maximum and minimum values for stability
-            self.D = np.where(self.D<self.minD,self.minD,self.D)
             self.D = np.where(self.D>self.maxD,self.maxD,self.D)
             self.u = np.where(self.u>self.vcut,self.vcut,self.u)
             self.u = np.where(self.u<-self.vcut,-self.vcut,self.u)
             self.v = np.where(self.v>self.vcut,self.vcut,self.v)
-            self.v = np.where(self.v<-self.vcut,-self.vcut,self.v)            
-            
+            self.v = np.where(self.v<-self.vcut,-self.vcut,self.v)          
+
             if self.t in np.arange(self.diagint,self.nt,self.diagint):
                 printdiags(self)
         if self.verbose:
@@ -427,7 +427,7 @@ def updatesecondary(self):
     
     #self.melt = self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
     
-    self.ustar = (self.Cd*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2+self.utide**2))**.5 * self.tmask
+    self.ustar = (self.Cdfac*self.Cd*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2+self.utide**2))**.5 * self.tmask
     self.gamT = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0)+12.5*self.Pr**(2./3)-8.68) * self.tmask
     self.gamS = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0)+12.5*self.Sc**(2./3)-8.68) * self.tmask
     self.That = (self.T[1,:,:]-self.l2-self.l3*self.zb).values * self.tmask
@@ -449,6 +449,10 @@ def updatesecondary(self):
     self.vyp1    = np.roll(self.v[1,:,:],1,axis=0)  
     self.uxp1    = np.roll(self.u[1,:,:],1,axis=1)      
 
+    #Additional entrainment to prevent D<minD
+    self.ent2 = np.maximum(0,self.minD-self.D[0,:,:]-(convT(self,self.D[1,:,:])-self.melt-self.entr)*2*self.dt)*self.tmask/(2*self.dt)
+    self.entr += self.ent2
+    
 def intD(self,delt):
     """Integrate D"""
     self.D[2,:,:] = self.D[0,:,:] \
@@ -507,6 +511,7 @@ def printdiags(self):
     """Print diagnostics at given intervals as defined below"""
     #Maximum thickness
     d0 = (self.D[1,:,:]*self.tmask).max()
+    #d0b = (np.where(self.tmask,self.D[1,:,:],100)).min()
     #Average thickness [m]
     d1 = div0((self.D[1,:,:]*self.tmask*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
     #Maximum melt rate [m/yr]
@@ -515,15 +520,18 @@ def printdiags(self):
     d3 = 3600*24*365.25*div0((self.melt*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
     #Minimum thickness
     d4 = np.where(self.tmask==0,100,self.D[1,:,:]).min()
+    #Integrated entrainment [Sv]
+    d6 = 1e-6*(self.entr*self.tmask*self.dx*self.dy).sum()
+    d6b = 1e-6*(self.ent2*self.tmask*self.dx*self.dy).sum()
     #Integrated volume thickness convergence == net in/outflow [Sv]
     d5 = -1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
-    #Total heat content [TJ]
-    d7 = 1e-12*self.cp*self.rho0*(self.D[1,:,:]*(self.T[1,:,:]+2.)*self.tmask).sum()
-    #Total salt content [Gg]
-    d8 = 1e-9*self.rho0*(self.D[1,:,:]*self.S[1,:,:]*self.tmask).sum()
-    #Total kinetic energy [TJ]
-    d9 = 1e-12*.5*self.rho0*(self.D[1,:,:]*(im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)*self.dx*self.dy).sum()
+    #Average temperature [degC]
+    d7 = div0((self.D[1,:,:]*self.T[1,:,:]*self.tmask).sum(),(self.D[1,:,:]*self.tmask).sum())
+    #Average salinity [psu]
+    d8 = div0((self.D[1,:,:]*self.S[1,:,:]*self.tmask).sum(),(self.D[1,:,:]*self.tmask).sum())   
+    #Average speed [m/s]
+    d9 = div0((self.D[1,:,:]*(im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5*self.tmask).sum(),(self.D[1,:,:]*self.tmask).sum())
 
-    print(f'{self.time[self.t]:8.03f} days || {d1:7.03f} | {d0:8.03f} m || {d3: 7.03f} | {d2: 8.03f} m/yr || {d5: 6.03f} Sv || {d9: 8.03f} | {d7: 8.03f} TJ || {d8: 8.03f} Gg')
+    print(f'{self.time[self.t]:8.03f} days || {d1:7.03f} | {d0:8.03f} m || {d3: 7.03f} | {d2: 8.03f} m/yr || {d6:6.03f} {d6b:6.03f} | {d5: 6.03f} Sv || {d9: 8.03f} m/s || {d7: 8.03f} C || {d8: 8.03f} psu')
               
     return
