@@ -11,8 +11,9 @@ import geopandas
 import matplotlib
 import matplotlib.pyplot as plt
 
-from constants import ModelConstants
 from advect import advect_grl
+from constants import ModelConstants
+from scipy.ndimage import gaussian_filter
 from shapely.geometry import mapping
 from tqdm.autonotebook import tqdm
 
@@ -110,8 +111,8 @@ class RealGeometry(ModelConstants):
         ds = ds.rio.set_spatial_dims(x_dim='x', y_dim='y')
         ds = ds.rio.write_crs('epsg:3031')
         poly = geopandas.read_file(self.fn_outline, crs='espg:3031')
-        self.clipped = ds.mask.rio.clip(poly.geometry.apply(mapping), poly.crs, drop=True)
-        self.ds = ds.where(self.clipped)
+        clipped = ds.mask.rio.clip(poly.geometry.apply(mapping), poly.crs, drop=True)
+        self.ds = ds.where(clipped)
         #
         if self.name in coarse_resolution:
             self.ds = self.ds.coarsen(x=5,y=5).mean()
@@ -132,13 +133,15 @@ class RealGeometry(ModelConstants):
         else:       Q = float(Q)
         return Q
 
-    def calc_draft_p(self):
-        """  add draft ()=surface-thickness) to self.ds """
+    def calc_draft(self):
+        """  add (draft=surface-thickness) to self.ds """
         self.ds['draft'] = (self.ds.surface-self.ds.thickness).where(self.ds.mask==3)
         self.ds.draft.attrs = {'long_name':'depth of ice shelf-ocean interface', 'units':'m'}
-        self.ds['p'] = abs(self.ds.draft)*self.rho0*self.g  # assuming constant density
-        self.ds.p.attrs       = {'long_name':'hydrostatic pressure', 'units':'Pa'}  
+        return
 
+    def calc_p(self):
+        self.ds['p'] = abs(self.ds.draft)*self.rho0*self.g  # assuming constant density
+        self.ds.p.attrs = {'long_name':'hydrostatic pressure', 'units':'Pa'}  
         return
 
     def determine_grl_isf(self):
@@ -334,6 +337,25 @@ class RealGeometry(ModelConstants):
         self.ds = xr.merge([self.ds, u, v])
         return
 
+    def extend_velocity(self):
+        """ extends velocity field by diffusion to areas where there are no observations """
+        # exists = (xr.where(self.ds.u**2+self.ds.v**2>0,1,0)*xr.where(np.isnan(self.ds.draft),0,1))
+        missing = (xr.where(np.isnan(self.ds.u**2+self.ds.v**2),0,1)*xr.where(np.isnan(self.ds.draft),0,1))
+        if missing.sum().values>0:
+            print('need to extend velocity')
+            u_new = self.ds.u+missing
+            v_new = self.ds.v+missing
+            for t in tqdm(range(2000)):
+                u_new = gaussian_filter(u_new, sigma=1, mode='reflect')
+                v_new = gaussian_filter(v_new, sigma=1, mode='reflect')
+                u_new = xr.where(missing==0, self.ds.u, u_new)
+                v_new = xr.where(missing==0, self.ds.v, v_new)
+            self.ds['u'] = u_new.where(np.isfinite(self.ds.draft))
+            self.ds['v'] = v_new.where(np.isfinite(self.ds.draft))
+        else:
+            print('no need to expand velosity')
+        return
+
     def adv_grl(self):
         """ solves advection-diffusion equation as described in Pelle et al. (2019)
         uses `advect_grl` frunction from `advect.py`
@@ -350,6 +372,17 @@ class RealGeometry(ModelConstants):
         self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
         self.ds.attrs = {'long_name':'advected groundling line depth', 'units':'m'}
         return
+
+    @staticmethod
+    def smoothen(da):
+        """ smoothens any DataArray wtih Gaussian filter of sigma=2(dx)
+        inspired by https://stackoverflow.com/questions/18697532/gaussian-filtering-a-image-with-nan-in-python
+        """
+        U = xr.where(np.isnan(da),0.,da)
+        V = xr.where(np.isnan(da),0.,1.)
+        kw = dict(sigma=2, mode='reflect')
+        Z = xr.DataArray(data=gaussian_filter(U, **kw)/gaussian_filter(V, **kw), dims=da.dims, coords=da.coords)
+        return Z  # xr.where(np.isnan(da),np.nan,Z)
 
     def calc_angles(self):
         """ local slope angles (in radians)
@@ -378,30 +411,44 @@ class RealGeometry(ModelConstants):
         if self.name in coarse_resolution:
             D = self.ds.draft
         else:  # smoothing `draft` with a rolling mean first
-            D = (self.ds.draft.rolling(x=5).mean()+self.ds.draft.rolling(y=5).mean())/2
+            # D = (self.ds.draft.rolling(x=5).mean(skipna=True)+self.ds.draft.rolling(y=5).mean(skipna=True))/2
+            D = RealGeometry.smoothen(self.ds.draft)
         dx, dy = D.x[1]-D.x[0], D.y[1]-D.y[0]
+        print(dx, dy)
         dxdy = abs((D.y-D.y.shift(y=1))*(D.x-D.x.shift(x=1)))
-        ip = D.shift(x=-1)
-        im = D.shift(x= 1)
-        jp = D.shift(y=-1)
-        jm = D.shift(y= 1)
+        ip, im = D.shift(x=-1), D.shift(x= 1)
+        jp, jm = D.shift(y=-1), D.shift(y= 1)
         n1 = np.array([-2*dy*(ip-im), -2*dx*(jp-jm), 4*dxdy])
         n1_norm = np.linalg.norm(n1, axis=0)
+        beta = np.arccos(4*dxdy/n1_norm)  # n3 already normalized
+        self.ds['beta']  = xr.where(np.isnan(self.ds.draft), np.nan, beta)
+        self.ds.attrs = {'long_name':'largest angle with horizontal', 'units':'rad'}
 
-        gradF = np.gradient(self.ds['grl_adv'], dx.values)
-        dFdx = xr.DataArray(data=gradF[1], dims=D.dims, coords=D.coords)
-        dFdy = xr.DataArray(data=gradF[0], dims=D.dims, coords=D.coords)
+        F = self.ds['grl_adv']
+        ip, im = F.shift(x=-1), F.shift(x= 1)
+        jp, jm = F.shift(y=-1), F.shift(y= 1)
+        dFdx = (ip-im)/2/dx
+        dFdy = (jp-jm)/2/dy
+
+        # selecting where centered difference results in NaN but one-sided difference does not
+        mask = xr.where(np.isnan(F),0,1)
+        mask_xp = xr.where(np.isnan(ip),1,0)*mask
+        dFdx = xr.where(mask_xp, (F-im)/dx, dFdx)
+        mask_xm = xr.where(np.isnan(im),1,0)*mask
+        dFdx = xr.where(mask_xm, (ip-F)/dx, dFdx)
+
+        mask_yp = xr.where(np.isnan(jp),1,0)*mask
+        dFdy = xr.where(mask_yp, (F-jm)/dy, dFdy)
+        mask_ym = xr.where(np.isnan(jm),1,0)*mask
+        dFdy = xr.where(mask_ym, (jp-F)/dy, dFdy)
+
         n2 = np.array([-dFdy, dFdx, xr.zeros_like(dFdx)])
         n2_norm = np.linalg.norm(n2, axis=0)
-        del n2
-
         alpha = np.arcsin((-dFdy*n1[0]+dFdx*n1[1])/n1_norm/n2_norm)
         alpha = abs(alpha)
-        beta = np.arccos(4*dxdy/n1_norm) # n3 already normalized
-        self.ds['alpha'] = alpha
+        alpha = xr.where(xr.where(np.isnan(alpha),1,0)*xr.where(np.isnan(self.ds.draft),0,1), 0, alpha)
+        self.ds['alpha'] = xr.where(np.isnan(self.ds.draft), np.nan, alpha)
         self.ds.attrs = {'long_name':'angle along streamlines', 'units':'rad'}
-        self.ds['beta']  = beta
-        self.ds.attrs = {'long_name':'largest angle with horizontal', 'units':'rad'}
         return
 
     def create(self, new=False):
@@ -412,15 +459,18 @@ class RealGeometry(ModelConstants):
         else:
             print(f'\n--- generate geometry {self.name} n={self.n} ---')
             self.select_geometry()  # creates self.ds from BedMachine data
-            self.calc_draft_p()
+            self.calc_draft()
+            self.calc_p()
             self.determine_grl_isf()
             self.find_distances()
             self.add_latlon()
             self.define_boxes()
             self.calc_area()
             self.interpolate_velocity()
+            self.extend_velocity()
             self.adv_grl()
             self.calc_angles()
+
             # needs dgrl for PICOP
             self.ds['n'] = self.n
             self.ds.n.attrs = {'long_name':'box number; 0 is ambient'}
@@ -493,7 +543,7 @@ if __name__=='__main__':
     """ calculate geometries for individual or all glaciers
     called as `python geometry.py new {glacier_name}`
     """
-    new = False  # skip calc if files exist; this is the default
+    new = False  # skip calculations if files exist; this is the default
     if len(sys.argv)>1:
         if sys.argv[1]=='new':
             new = True   # overwrite existing files
