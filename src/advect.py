@@ -49,10 +49,9 @@ def advect_grl(ds, eps, T, verbose=True, plots=True):
     
     ds = ds.pad(x=1, mode='edge')
     ds = ds.pad(y=1, mode='edge')
-    
     evo = xr.DataArray(data=np.zeros((len(ds.y), len(ds.x), Nt)),
                        dims=['y','x','time'],
-                       coords={'y':ds.y, 'x':ds.x, 'time':np.arange(0,dt*Nt,dt)}
+                       coords={'y':ds.y, 'x':ds.x, 'time':np.arange(0,dt*Nt-1e-10,dt)}
                       )
     # domain mask of points inside ice shelf, but outside of grl
     mask_ = ds.mask.where(ds.grl==0)
