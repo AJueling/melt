@@ -60,7 +60,7 @@ def advect_grl(ds, eps, T, verbose=True, plots=True):
     
     # initial conditions
     # in ice shelf set depth to minimum draft depth
-    evo[:,:,0] = xr.where(ds.mask==1, draftmin, 0)
+    evo[:,:,0] = xr.where(ds.mask==3, draftmin, 0)
     #  at grl set depth to draft
     evo[:,:,0] = xr.where(ds.grl==1, ds.draft, evo[:,:,0])  
     
@@ -101,7 +101,7 @@ def advect_grl(ds, eps, T, verbose=True, plots=True):
         evo[:,:,t] = reset_pads(evo[:,:,t])
         evo[:,:,t] = xr.where(evo[:,:,t]<draftmin, draftmin, evo[:,:,t])  #
         evo[:,:,t] = xr.where(evo[:,:,t]>draftmax, draftmax, evo[:,:,t])  #
-    evo = evo.where(ds.mask==1)  # mask out everything outside ice shelf
+    evo = evo.where(ds.mask==3)  # mask out everything outside ice shelf
     
     if plots:
         # convergence plot
