@@ -52,13 +52,13 @@ class LayerModel(ModelConstants):
         
         #Some input params
         self.nu   = .8          # Nondimensional factor for Robert Asselin time filter
-        self.slip = 2           # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
+        self.slip = 1           # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
         self.Ah   = 6           # Laplacian viscosity [m^2/s]
         self.Kh   = 1           # Diffusivity [m^2/s]
         self.dt   = 40          # Time step [s]
         
         self.cl   = 0.0245      # Parameter for Holland entrainment
-        self.Cdfac = 1.         # Multiplication factor for drag in Ustar
+        self.Cdfac = .35        # Multiplication factor for drag in Ustar
         self.utide = 0.01       # RMS tidal velocity [m/s]
         self.Pr   = 13.8        # Prandtl number
         self.Sc   = 2432.       # Schmidt number
@@ -150,14 +150,14 @@ class LayerModel(ModelConstants):
         self.ds['tend']   = self.tend
         
         self.ds['name_model'] = 'Layer'
-        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}_{self.tend:.3f}"
+        self.ds['filename'] = f"../../results/Layer/{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}_{self.tend:.3f}"
         self.ds.to_netcdf(f"{self.ds['filename'].values}.nc")
         print('-----------------------------')
         print(f"Output saved as {self.ds['filename'].values}.nc")
         if savespinup:
-            self.ds.to_netcdf(f"../../results/spinup/{self.ds['name_geo'].values}_{self.tend:.3f}.nc")
+            self.ds.to_netcdf(f"../../results/Layer/restart/{self.ds['name_geo'].values}_{self.tend:.3f}.nc")
             print('-----------------------------')
-            print(f'Saved copy as spinup at day {self.tend:.3f}')            
+            print(f'Saved copy as restart file at day {self.tend:.3f}')            
         print('=============================')
     
         return self.ds
@@ -245,7 +245,7 @@ def initialize_vars(self,readspinup):
 
     #Initial values
     try:
-        dsinit = xr.open_dataset(f"../../results/spinup/{self.ds['name_geo'].values}_{readspinup:.3f}.nc")
+        dsinit = xr.open_dataset(f"../../results/Layer/restart/{self.ds['name_geo'].values}_{readspinup:.3f}.nc")
         self.tstart = dsinit.tend.values
         for n in range(3):
             self.u[n,:,:] = dsinit.u

@@ -104,8 +104,8 @@ def prettyplot(ds,figsize=(10,10)):
     ax.set_yticks([])
     plt.tight_layout()
     
-    fname = f"../../results/figures/{ds['name_model'].values}_{ds['name_geo'].values}_{ds.attrs['name_forcing']}"
-    
+    fname = f"../../results/{ds['name_model'].values}/figures/{ds['name_geo'].values}_{ds.attrs['name_forcing']}__{ds['tend'].values:.3f}"
+
     plt.savefig(f"{fname}.png")
     plt.show()
     
