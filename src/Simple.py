@@ -14,6 +14,7 @@ class SimpleModels(ModelConstants):
         ds    ..  (xr.Dataset)  contains
               . draft  (x,y)
               . Ta     (x,y)
+              . mask   (x,y)
 
         output:
         ds    ..  (xr.Dataset)  contains additionally
@@ -32,9 +33,9 @@ class SimpleModels(ModelConstants):
         return
 
     def compute(self):
-        """ computes both local (Eq. 4) and non-local (Eq. 5) melt rates """
+        """ computes both local (Eq. 4) and non-local (Eq. 5) melt rates [m/yr] """
         pf = self.rhow*self.cp/self.rhoi/self.L
-        dT = self.ds.Ta-self.ds.Tf
+        dT = (self.ds.Ta-self.ds.Tf).where(self.ds.mask==3)
         self.ds['dT'] = dT
         self.ds['Ml'] = self.spy*self.gT_Ml*pf*dT
         self.ds['Mq'] = self.spy*self.gT_Mq*pf**2*dT**2

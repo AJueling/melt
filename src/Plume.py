@@ -34,16 +34,27 @@ class PlumeModel(ModelConstants):
             assert q in dp, f'missing {q}'
         self.dp = dp
 
+        # setting minimum angle to 0
+        self.dp['alpha'] = xr.where(self.dp.alpha>0,self.dp.alpha,0)
+
         # freezing point at corresponding grounding line, eqn (7)
         self.dp['Tf0'] = self.l1*self.dp.Sa + self.l2 + self.l3*self.dp.grl_adv
-        self.dp.Tf0.attrs = {'long_name':'pressure freezing point at corresponding grounding line'}
+        self.dp.Tf0.attrs = {'long_name':'potential pressure freezing point temperature at corresponding grounding line origin', 'units':'degC'}
         
         # calculate dimensionless coordinate dgrl_=$\tilde{x}$ (28b)
         self.Ea = self.E0*np.sin(self.dp.alpha)
-        self.dp['dgrl_'] = self.l3*(self.dp.draft-self.dp.grl_adv)/(self.dp.Ta-self.dp.Tf0)/\
+        self.dT = self.dp.Ta-self.dp.Tf0
+        # self.dT = self.dT.where(self.dT>0,0)
+
+        self.dp['dgrl_'] = self.l3*(self.dp.draft-self.dp.grl_adv)/self.dT/\
                            (1+self.Ce*(self.Ea/(self.CG+self.ct+self.Ea))**(3/4))
         self.dp.dgrl_.attrs = {'long_name':'dimensionless coordinate tilde{x} in limited range [0,1); eqn. (28b)'}
-            
+        
+        # self.dp['dgrl_'] = xr.where(self.dp.dgrl_>0,self.dp.dgrl_,0)
+        self.dp['dgrl_'] = xr.where(self.dp.dgrl_>0,self.dp.dgrl_,0)
+        self.dp['dgrl_'] = xr.where(self.dp.dgrl_<1,self.dp.dgrl_,1).where(self.dp.mask==3)
+
+
         # reused parameter combinations
         self.f1 = self.bs*self.dp.Sa*self.g/(self.l3*(self.L/self.cp)**3)
         self.f2 = (1-self.cr1*self.CG)/(self.Cd+self.Ea)
@@ -63,7 +74,7 @@ class PlumeModel(ModelConstants):
         needs nondimensional melt rate at dgrl_
         """
         assert 'M' in self.dp
-        return np.sqrt(self.f1*self.f2*self.f3**3)*(self.dp.Ta-self.dp.Tf0)**2*self.dp.M
+        return np.sqrt(self.f1*self.f2*self.f3**3)*self.dT**2*self.dp.M
     
     def phi0(self, x):
         """ non-dimensional cavity circulation, eqn. (25) """
@@ -71,7 +82,7 @@ class PlumeModel(ModelConstants):
     
     def Phi(self):
         """ dimensional cavity circulation, eqn. (29) """
-        return self.E0*np.sqrt(self.f1*self.f2*self.f3)*(self.dp.Ta-self.dp.Tf0)**2*self.dp.phi0
+        return self.E0*np.sqrt(self.f1*self.f2*self.f3)*self.dT**2*self.dp.phi0
 
     def compute_plume(self, full_nondim=False):
         """ combines all output into single xarray dataset """
@@ -86,10 +97,10 @@ class PlumeModel(ModelConstants):
         # calculations
         self.dp['M'], self.dp['phi0'] = compute_nondimensional(self.dp.dgrl_)
 
-        self.dp['m']  = self.dim_M()*3600*24*365  # [m/s] -> [m/yr]
+        self.dp['m']  = self.dim_M().where(self.dp.mask==3)*3600*24*365  # [m/s] -> [m/yr]
         self.dp.m.attrs = {'long_name':'dimensional meltrates; eqn. (28a)', 'units':'m/yr'}
         
-        self.dp['Phi']   = self.Phi()
+        self.dp['Phi']   = self.Phi().where(self.dp.mask==3)
         self.dp.Phi.attrs = {'long_name':'dimensional circulation; eqn. (29)', 'units':'m^3/s'}
 
         if full_nondim:   # compute non-dimensional 1D melt curve for full [0,1] interval

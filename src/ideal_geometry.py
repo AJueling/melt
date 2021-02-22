@@ -155,7 +155,7 @@ class IdealGeometry(ModelConstants):
                                 'boxnr':('boxnr',np.arange(self.n+1))},
                        )
         ds['draft'] = dsi.lowerSurface.interp_like(ds)
-        ds.draft[[0,-1],:] = ds.draft[[1,-2],:].values  # otherwise the lateral boundaries have nonsensical values
+        ds.draft[[0,-1],:] = ds.draft[[1,-2],:].values  # otherwise the lateral boundaries have nonsensical values due to interpolation with Nan or 0
         ds.draft[:,-2] = ds.draft[:,-3] + (ds.draft[:,-3]-ds.draft[:,-4])/(ds.x[1]-ds.x[0])  # second to last row interpolated between sea level and draft
         ds['mask'] = (dsi.groundedMask + 3*dsi.floatingMask).interp_like(ds,method='nearest').astype(int)
         ds.mask[[0,-1],:] = 0  # ds.mask[[1,-2],:].values
@@ -163,6 +163,7 @@ class IdealGeometry(ModelConstants):
         ds['dgrl'] = dist - xr.where((ds.mask-ds.mask.shift(x=-1))==-2,dist,0).sum('x')
         ds['disf'] = abs(dist - xr.where((ds.mask-ds.mask.shift(x=-1))== 3,dist,0).sum('x'))
         ds['alpha'] = (('y','x'), np.gradient(ds.draft.values,500, axis=1))
+        ds.alpha[:,-2] = ds.alpha[:,-3]
         a = xr.where((ds.mask-ds.mask.shift(x=-1))==-2,ds.draft,0).sum('x')
         ds['grl_adv'] = (('y','x'), np.tile(a,len(ds.x)).reshape((len(ds.x),len(ds.y))).T)
         rd = ds.dgrl/(ds.dgrl+ds.disf)  # dimensionless relative distance

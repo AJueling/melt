@@ -66,7 +66,7 @@ class PicoModel(ModelConstants):#, RealGeometry):
             self.g2[k] = self.g1[k]/self.nulambda
             self.pk[k] = self.ds.p.where(self.ds.box==k).mean(['x','y'])
         
-        self.M = xr.zeros_like(self.ds.draft)  # melt(x,y)
+        self.M = xr.zeros_like(self.ds.draft).where(self.ds.mask==3)  # melt(x,y)
         self.M.name = 'melt'
         self.M.attrs = {'long_name':'dimensional melt', 'units':'m/yr'}
         self.T = np.zeros((self.n+1))  # box avg ambient temp

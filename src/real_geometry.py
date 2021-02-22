@@ -59,8 +59,8 @@ class RealGeometry(ModelConstants):
         ds  (xr.Dataset)             containing:
             draft    (x,y)    [m]    vertical position of ice shelf base  (<=0)
             p        (x,y)    [Pa]   hydrostatic pressure
-            # mask     (x,y)    [int]  [0] ocean, [1] grounded ice, [3] ice shelf; like BedMachine dataset
-            mask     (x,y) *  [bool] mask of ice shelf in domain 
+            mask     (x,y)    [int]  [0] ocean, [1] grounded ice, [3] ice shelf; like BedMachine dataset
+            # mask     (x,y) *  [bool] mask of ice shelf in domain 
             grl      (x,y) *  [bool] grounding line mask
             isf      (x,y) *  [bool] ice shelf front mask
             dgrl     (x,y)    [m]    distance to grounding line, needed for Plume and PICOP  !!! not yet implemented
@@ -71,13 +71,6 @@ class RealGeometry(ModelConstants):
             grl_adv  (x,y)    [m]    advected grounding line depth, needed for Plume and PICOP
             box      (x,y)    [int]  box number [1,n] for PICO and PICOP models
             area_k   (boxnr)  [m^2]  area per box
-
-            (*) intermediate results only, not needed for any of the models
-                        . mask   .. 
-            . 
-            . 
-            . box    .. (int)    box number [1,...,n]
-            . area   .. (float)  area of each box [m^2]
     """
     def __init__(self, name, n=None):
         """
@@ -172,10 +165,10 @@ class RealGeometry(ModelConstants):
         isf  = find_grl_isf('isf')
         isf.attrs = {'long_name':'ice shelf front mask'}
         # now new `mask`: ice shelf = 1, rest = 0
-        mask = xr.where(self.ds['mask']==3, 1, 0)
-        self.ds = self.ds.rename({'mask':'mask_orig'})
+        # mask = xr.where(self.ds['mask']==3, 1, 0)
+        # self.ds = self.ds.rename({'mask':'mask_orig'})
         # self.ds = self.ds.drop('mask')
-        self.ds = xr.merge([self.ds, mask, grl, isf])
+        self.ds = xr.merge([self.ds, grl, isf])
         return
 
     @staticmethod
@@ -288,9 +281,9 @@ class RealGeometry(ModelConstants):
                                       dims=['y','x'],
                                       coords=self.ds.coords)
         for k in np.arange(1,self.n+1):
-            lb = self.ds.mask.where(self.ds.rd>=1-np.sqrt((self.n-k+1)/self.n))
-            ub = self.ds.mask.where(self.ds.rd<=1-np.sqrt((self.n-k)/self.n))
-            self.ds.box.values += xr.where(ub*lb==1, k*self.ds.mask, 0).values
+            lb = xr.where(self.ds.mask==3,1,0).where(self.ds.rd>=1-np.sqrt((self.n-k+1)/self.n))
+            ub = xr.where(self.ds.mask==3,1,0).where(self.ds.rd<=1-np.sqrt((self.n-k)/self.n))
+            self.ds.box.values += xr.where(ub*lb==1, k, 0).values
         return
     
     def calc_area(self):
@@ -300,9 +293,9 @@ class RealGeometry(ModelConstants):
         """
         dx = abs(self.ds.x[1]-self.ds.x[0])
         dy = abs(self.ds.y[1]-self.ds.y[0])
-        self.ds['area'] = dx*dy*self.ds.mask
+        self.ds['area'] = (dx*dy).where(self.ds.mask==3)
         A = np.zeros((self.n+1))
-        A[0] = (self.ds.mask*self.ds.area).sum(['x','y'])
+        A[0] = self.ds.area.sum(['x','y'])
         for k in np.arange(1,self.n+1):
             A[k] = self.ds.area.where(self.ds.box==k).sum(['x','y'])  
         # assert A[0]==np.sum(A[1:]), f'{A[0]=} should be{np.sum(A[1:])=}'
@@ -340,18 +333,32 @@ class RealGeometry(ModelConstants):
     def extend_velocity(self):
         """ extends velocity field by diffusion to areas where there are no observations """
         # exists = (xr.where(self.ds.u**2+self.ds.v**2>0,1,0)*xr.where(np.isnan(self.ds.draft),0,1))
-        missing = (xr.where(np.isnan(self.ds.u**2+self.ds.v**2),0,1)*xr.where(np.isnan(self.ds.draft),0,1))
+        missing = (xr.where(self.ds.u**2+self.ds.v**2>0,0,1)*xr.where(np.isnan(self.ds.draft),0,1))
+        
+        # plt.figure()
+        # missing.plot()
+
         if missing.sum().values>0:
             print('need to extend velocity')
-            u_new = self.ds.u+missing
-            v_new = self.ds.v+missing
+            u = xr.where(np.isnan(self.ds.u.where(self.ds.mask==3)),0,self.ds.u)#
+            v = xr.where(np.isnan(self.ds.v.where(self.ds.mask==3)),0,self.ds.v)#
+            u_new = u+missing
+            v_new = v+missing
             for t in tqdm(range(2000)):
-                u_new = gaussian_filter(u_new, sigma=1, mode='reflect')
-                v_new = gaussian_filter(v_new, sigma=1, mode='reflect')
-                u_new = xr.where(missing==0, self.ds.u, u_new)
-                v_new = xr.where(missing==0, self.ds.v, v_new)
+                u_new = gaussian_filter(u_new, sigma=2, mode='reflect')
+                v_new = gaussian_filter(v_new, sigma=2, mode='reflect')
+                u_new = xr.where(missing==0, u, u_new)
+                v_new = xr.where(missing==0, v, v_new)
+
+            # plt.figure()
+            # u_new.plot()
+
+            # plt.figure()
+            # self.ds.u.plot()
             self.ds['u'] = u_new.where(np.isfinite(self.ds.draft))
             self.ds['v'] = v_new.where(np.isfinite(self.ds.draft))
+            # plt.figure()
+            # self.ds.u.plot()
         else:
             print('no need to expand velosity')
         return
@@ -369,18 +376,20 @@ class RealGeometry(ModelConstants):
         kw_isel = dict(x=slice(1,-1), y=slice(1,-1))  # remove padding
         evo = advect_grl(ds=ds, eps=1/50, T=T, plots=False).isel(**kw_isel)
         # evo.to_netcdf(self.fn_evo)
+
         self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
+        self.ds['grl_adv'] = RealGeometry.smoothen(da=self.ds.grl_adv, sigma=1)
         self.ds.attrs = {'long_name':'advected groundling line depth', 'units':'m'}
         return
 
     @staticmethod
-    def smoothen(da):
+    def smoothen(da, sigma=2):
         """ smoothens any DataArray wtih Gaussian filter of sigma=2(dx)
         inspired by https://stackoverflow.com/questions/18697532/gaussian-filtering-a-image-with-nan-in-python
         """
         U = xr.where(np.isnan(da),0.,da)
         V = xr.where(np.isnan(da),0.,1.)
-        kw = dict(sigma=2, mode='reflect')
+        kw = dict(sigma=sigma, mode='reflect')
         Z = xr.DataArray(data=gaussian_filter(U, **kw)/gaussian_filter(V, **kw), dims=da.dims, coords=da.coords)
         return Z  # xr.where(np.isnan(da),np.nan,Z)
 
@@ -422,7 +431,7 @@ class RealGeometry(ModelConstants):
         n1_norm = np.linalg.norm(n1, axis=0)
         beta = np.arccos(4*dxdy/n1_norm)  # n3 already normalized
         self.ds['beta']  = xr.where(np.isnan(self.ds.draft), np.nan, beta)
-        self.ds.attrs = {'long_name':'largest angle with horizontal', 'units':'rad'}
+        self.ds.beta.attrs = {'long_name':'largest angle with horizontal', 'units':'rad'}
 
         F = self.ds['grl_adv']
         ip, im = F.shift(x=-1), F.shift(x= 1)
@@ -448,7 +457,7 @@ class RealGeometry(ModelConstants):
         alpha = abs(alpha)
         alpha = xr.where(xr.where(np.isnan(alpha),1,0)*xr.where(np.isnan(self.ds.draft),0,1), 0, alpha)
         self.ds['alpha'] = xr.where(np.isnan(self.ds.draft), np.nan, alpha)
-        self.ds.attrs = {'long_name':'angle along streamlines', 'units':'rad'}
+        self.ds.alpha.attrs = {'long_name':'angle along streamlines', 'units':'rad'}
         return
 
     def create(self, new=False):
@@ -467,7 +476,11 @@ class RealGeometry(ModelConstants):
             self.define_boxes()
             self.calc_area()
             self.interpolate_velocity()
+            # plt.figure()
+            # self.ds.u.plot()
             self.extend_velocity()
+            # plt.figure()
+            # self.ds.u.plot()
             self.adv_grl()
             self.calc_angles()
 
