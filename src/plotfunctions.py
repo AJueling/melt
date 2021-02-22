@@ -59,9 +59,16 @@ def plotdiffmelt(ax,lon,lat,melt):
     IM = ax.pcolormesh(lon,lat,melt,vmin=-50,vmax=50,cmap=cmap,transform=ccrs.PlateCarree())
     return IM
 
-def prettyplot(ds,figsize=(10,10)):
+def prettyplot(dsav,figsize=(10,10)):
+ 
+    try:
+        ds = xr.open_dataset(f"{dsav['filename'].values}.nc")
+    except:
+        print('No output saved yet, cannot plot')
+        return
+
     fig,ax = plt.subplots(1,1,figsize=figsize)            
-    ax.set_aspect('equal', adjustable='box')  
+    ax.set_aspect('equal', adjustable='box') 
     
     x = ds['x'].values
     y = ds['y'].values
@@ -104,8 +111,8 @@ def prettyplot(ds,figsize=(10,10)):
     ax.set_yticks([])
     plt.tight_layout()
     
-    fname = f"../../results/figures/{ds['name_model'].values}_{ds['name_geo'].values}_{ds.attrs['name_forcing']}"
-    
+    fname = f"../../results/{ds['name_model'].values}/figures/{ds['name_geo'].values}_{ds.attrs['name_forcing']}__{ds['tend'].values:.3f}"
+
     plt.savefig(f"{fname}.png")
     plt.show()
     

@@ -60,6 +60,25 @@ class Forcing(ModelConstants):
         self.ds = self.calc_fields()
         self.ds.attrs['name_forcing'] = f'tanh_Tdeep{Tdeep:.1f}_ztcl{ztcl}'
         return self.ds
+    
+    def tanh2(self, ztcl, Tdeep, drhodz=.6/720, T0 = -1.5):
+        """ creates tanh thermocline forcing profile
+        input:
+        ztcl    ..  (float)  [m]       thermocline depth
+        Tdeep   ..  (float)  [degC]    in situ temperature at depth
+        drhodz  ..  (float)  [kg/m^4]  linear density stratification
+        """
+        if ztcl>0:
+            print('z-coordinate is postive upwards; ztcl was {ztcl}, now set ztcl=-{ztcl}')
+            ztcl = -ztcl
+        self.S0 = 34                       # [psu]  reference surface salinity
+        self.z1 = 100                      # [m]    thermocline sharpness
+        
+        self.ds['Tz'] = Tdeep + (T0-Tdeep) * (1+np.tanh((self.ds.z-ztcl)/self.z1))/2
+        self.ds['Sz'] = self.S0 + self.alpha*(self.ds.Tz-T0)/self.beta - drhodz*self.ds.z/(self.beta*self.rho0)
+        self.ds = self.calc_fields()
+        self.ds.attrs['name_forcing'] = f'tanh2_Tdeep{Tdeep:.1f}_ztcl{ztcl}'
+        return self.ds
 
     def favier(self, profile):
         """ piecewise linear profiles suggested by Favier et al. (2019), using potential temperature """
@@ -142,7 +161,17 @@ class Forcing(ModelConstants):
         self.ds.Tf.attrs = {'long_name':'local potential freezing point', 'units':'degC'}  # from:Eq. 3 of Favier19
         return self.ds
 
-    def holland(self,option='interp'):
+    def holland07(self):
+        z = [-5000,-2000,0]
+        Tz = [-2.3,-2.3,-1.9]
+        Sz = [34.8,34.8,34.5]
+        self.ds['Tz'] = (['z'],np.interp(self.ds.z,z,Tz))
+        self.ds['Sz'] = (['z'],np.interp(self.ds.z,z,Sz))
+        self.ds = self.calc_fields()
+        self.ds.attrs['name_forcing'] = f'holland07'
+        return self.ds        
+    
+    def holland(self,option='interp',kup =2,kdwn = 1,nsm = 1):
         
         self.ds = add_lonlat(self.ds)
         lon3 = self.ds.lon.values
@@ -172,11 +201,11 @@ class Forcing(ModelConstants):
         for j,jj in enumerate(lat):
             for i,ii in enumerate(lon):
                 if Sh[0,j,i] == 0:
-                    k0 = np.argmax(Sh[:,j,i]!=0)+2
+                    k0 = np.argmax(Sh[:,j,i]!=0)+kup
                     Th[:k0,j,i] = Th[k0,j,i]
                     Sh[:k0,j,i] = Sh[k0,j,i]
                 if Sh[-1,j,i] == 0:
-                    k1 = np.argmin(Sh[:,j,i]!=0)-1
+                    k1 = np.argmin(Sh[:,j,i]!=0)-kdwn
                     Th[k1:,j,i] = Th[k1-1,j,i]
                     Sh[k1:,j,i] = Sh[k1-1,j,i]
                 if sum(Sh[:,j,i]) == 0:
@@ -187,7 +216,6 @@ class Forcing(ModelConstants):
         depth = np.arange(5000) #depth also used as index, so must be positive with steps of 1
         Tz = np.zeros((len(depth),mask.shape[0],mask.shape[1]))
         Sz = np.zeros((len(depth),mask.shape[0],mask.shape[1]))
-        nsm = 1
         for j in range(mask.shape[0]):
             for i in range(mask.shape[1]):
                 if mask[j,i] == 3:

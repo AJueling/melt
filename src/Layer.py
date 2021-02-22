@@ -52,12 +52,13 @@ class LayerModel(ModelConstants):
         
         #Some input params
         self.nu   = .8          # Nondimensional factor for Robert Asselin time filter
-        self.slip = 2           # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
+        self.slip = 1           # Nondimensional factor Free slip: 0, no slip: 2, partial no slip: [0..2]  
         self.Ah   = 6           # Laplacian viscosity [m^2/s]
         self.Kh   = 1           # Diffusivity [m^2/s]
         self.dt   = 40          # Time step [s]
         
         self.cl   = 0.0245      # Parameter for Holland entrainment
+        self.Cdfac = .35        # Multiplication factor for drag in Ustar
         self.utide = 0.01       # RMS tidal velocity [m/s]
         self.Pr   = 13.8        # Prandtl number
         self.Sc   = 2432.       # Schmidt number
@@ -68,17 +69,19 @@ class LayerModel(ModelConstants):
         self.minD = 1.          # Cutoff thickness [m]
         self.maxD = 1000.       # Cutoff maximum thickness [m]
         self.vcut = 1.414       # Cutoff velocity U and V [m/s]
-        self.Dinit = 10.     # Initial uniform thickness [m]
+        self.Dinit = 10.        # Initial uniform thickness [m]
         
         #Some parameters for displaying output
-        self.diagint = 100      # Timestep at which to print diagnostics
+        self.diagday = .1       # Timestep at which to print diagnostics
         self.verbose = True
+        self.saveday = 1        # Interval at which to save time-average fields [days]
+        self.restday = 1        # Interval at which to save restart file [days]
         
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
         intD(self,2*self.dt)
         intu(self,2*self.dt)
-        intv(self,2*self.dt)
+        intv(self,2*self.dt) 
         intT(self,2*self.dt)
         intS(self,2*self.dt)        
         return
@@ -102,10 +105,10 @@ class LayerModel(ModelConstants):
         updatesecondary(self)
         return
     
-    def compute(self,days=12,savespinup=False,readspinup=None):
+    def compute(self,days=12,restartfile=None):
         create_mask(self)
         create_grid(self)
-        initialize_vars(self,readspinup)
+        initialize_vars(self,restartfile)
 
         self.nt = int(days*24*3600/self.dt)+1    # Number of time steps
         self.tend = self.tstart+days
@@ -114,59 +117,28 @@ class LayerModel(ModelConstants):
             self.updatevars()
             self.integrate()
             self.timefilter()
-            
+
             #Cut maximum and minimum values for stability
-            self.D = np.where(self.D<self.minD,self.minD,self.D)
             self.D = np.where(self.D>self.maxD,self.maxD,self.D)
             self.u = np.where(self.u>self.vcut,self.vcut,self.u)
             self.u = np.where(self.u<-self.vcut,-self.vcut,self.u)
             self.v = np.where(self.v>self.vcut,self.vcut,self.v)
-            self.v = np.where(self.v<-self.vcut,-self.vcut,self.v)            
-            
-            if self.t in np.arange(self.diagint,self.nt,self.diagint):
-                printdiags(self)
-        if self.verbose:
-            print('-----------------------------')
-            print(f'Run completed, final values:')
+            self.v = np.where(self.v<-self.vcut,-self.vcut,self.v)          
+
+            savefields(self)
+            saverestart(self)
             printdiags(self)
-        
-        #Output
-        self.ds['u'] = (['y','x'], self.u[1,:,:])
-        self.ds['v'] = (['y','x'], self.v[1,:,:])        
-        self.ds['U'] = (['y','x'], im(self.u[1,:,:]))
-        self.ds['V'] = (['y','x'], jm(self.v[1,:,:]))
-        self.ds['D'] = (['y','x'], self.D[1,:,:])
-        self.ds['T'] = (['y','x'], self.T[1,:,:])
-        self.ds['S'] = (['y','x'], self.S[1,:,:])
-        
-        self.ds['tmask'] = (['y','x'], self.tmask)
-        
-        self.ds['entr'] = (['y','x'], 3600*24*365.25*self.entr)
-        self.ds['melt'] = (['y','x'], 3600*24*365.25*self.melt)
-        self.ds['mav'] = 3600*24*365.25*(self.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()
-        self.ds['mmax'] = 3600*24*365.25*self.melt.max()
-        
-        self.ds['tstart'] = self.tstart
-        self.ds['tend']   = self.tend
-        
-        self.ds['name_model'] = 'Layer'
-        self.ds['filename'] = f"../../results/{self.ds['name_model'].values}_{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}_{self.tend:.3f}"
-        self.ds.to_netcdf(f"{self.ds['filename'].values}.nc")
+            
         print('-----------------------------')
-        print(f"Output saved as {self.ds['filename'].values}.nc")
-        if savespinup:
-            self.ds.to_netcdf(f"../../results/spinup/{self.ds['name_geo'].values}_{self.tend:.3f}.nc")
-            print('-----------------------------')
-            print(f'Saved copy as spinup at day {self.tend:.3f}')            
-        print('=============================')
-    
+        print(f'Run completed')
+        
         return self.ds
 
 def create_mask(self):
 
     #Read mask input
     #Remove single cavity points
-    self.mask = np.where(np.roll(self.mask,-1,axis=0)+np.roll(self.mask,1,axis=0)+np.roll(self.mask,-1,axis=1)+np.roll(self.mask,1,axis=1)-self.mask==-3,0,self.mask)
+    #self.mask = np.where(np.roll(self.mask,-1,axis=0)+np.roll(self.mask,1,axis=0)+np.roll(self.mask,-1,axis=1)+np.roll(self.mask,1,axis=1)-self.mask==-3,0,self.mask)
     
     self.tmask = np.where(self.mask==3,1,0)
     self.grd   = np.where(self.mask==2,1,0)
@@ -212,8 +184,6 @@ def create_mask(self):
 
     self.umaskxp1 = np.roll(self.umask,1,axis=1)
     self.vmaskyp1 = np.roll(self.vmask,1,axis=0)
-
-    return
     
 def create_grid(self):   
     #Spatial parameters
@@ -229,31 +199,29 @@ def create_grid(self):
         print('1D run, using free slip')
         self.slip = 0                             
 
-    return
 
-def initialize_vars(self,readspinup):
+def initialize_vars(self,restartfile):
     #Major variables. Three arrays for storage of previous timestep, current timestep, and next timestep
     self.u = np.zeros((3,self.ny,self.nx)).astype('float64')
     self.v = np.zeros((3,self.ny,self.nx)).astype('float64')
     self.D = np.zeros((3,self.ny,self.nx)).astype('float64')
     self.T = np.zeros((3,self.ny,self.nx)).astype('float64')
     self.S = np.zeros((3,self.ny,self.nx)).astype('float64')
-
+    
     #Draft dz/dx and dz/dy on t-grid
     self.dzdx = np.gradient(self.zb,self.dx,axis=1)
     self.dzdy = np.gradient(self.zb,self.dy,axis=0)
 
     #Initial values
     try:
-        dsinit = xr.open_dataset(f"../../results/spinup/{self.ds['name_geo'].values}_{readspinup:.3f}.nc")
+        dsinit = xr.open_dataset(f"../../results/Layer/restart/{self.ds['name_geo'].values}_{restartfile}.nc")
         self.tstart = dsinit.tend.values
-        for n in range(3):
-            self.u[n,:,:] = dsinit.u
-            self.v[n,:,:] = dsinit.v
-            self.D[n,:,:] = dsinit.D
-            self.T[n,:,:] = dsinit.T
-            self.S[n,:,:] = dsinit.S
-        print(f'Starting from spinup file at day {self.tstart:.3f}')
+        self.u = dsinit.u.values
+        self.v = dsinit.v.values
+        self.D = dsinit.D.values
+        self.T = dsinit.T.values
+        self.S = dsinit.S.values
+        print(f'Starting from restart file at day {self.tstart:.3f}')
     except:    
         self.tstart = 0
         if len(self.Tz.shape)==1:
@@ -263,23 +231,44 @@ def initialize_vars(self,readspinup):
             self.Ta = self.Tz[np.int_(-self.zb),self.ind[0],self.ind[1]]
             self.Sa = self.Sz[np.int_(-self.zb),self.ind[0],self.ind[1]]
             
-        self.Tf   = (self.l1*self.Sa+self.l2+self.l3*self.zb).values
+        #self.Tf   = (self.l1*self.Sa+self.l2+self.l3*self.zb).values
         
         self.D += self.Dinit
         for n in range(3):
             self.T[n,:,:] = self.Ta-.1
             self.S[n,:,:] = self.Sa-.1
         print('Starting from noflow')
+        
+        #Perform first integration step with 1 dt
+        updatesecondary(self)
+        intD(self,self.dt)
+        intu(self,self.dt)
+        intv(self,self.dt)
+        intT(self,self.dt)
+        intS(self,self.dt)
 
-    #Perform first integration step with 1 dt
-    updatesecondary(self)
-    intD(self,self.dt)
-    intu(self,self.dt)
-    intv(self,self.dt)
-    intT(self,self.dt)
-    intS(self,self.dt)
-    return    
-
+    #For storing time averages
+    self.count = 0
+    self.saveint = int(self.saveday*3600*24/self.dt)
+    self.diagint = int(self.diagday*3600*24/self.dt)
+    self.restint = int(self.restday*3600*24/self.dt)
+    
+    self.dsav = self.ds
+    self.dsav['U'] = (['y','x'], np.zeros((self.ny,self.nx)).astype('float64'))
+    self.dsav['V'] = (['y','x'], np.zeros((self.ny,self.nx)).astype('float64'))
+    self.dsav['D'] = (['y','x'], np.zeros((self.ny,self.nx)).astype('float64'))
+    self.dsav['T'] = (['y','x'], np.zeros((self.ny,self.nx)).astype('float64'))
+    self.dsav['S'] = (['y','x'], np.zeros((self.ny,self.nx)).astype('float64'))
+    self.dsav['melt'] = (['y','x'], np.zeros((self.ny,self.nx)).astype('float64'))
+    self.dsav['entr'] = (['y','x'], np.zeros((self.ny,self.nx)).astype('float64'))
+    self.dsav['tmask'] = (['y','x'], self.tmask)
+    self.dsav['mask']  = (['y','x'], self.mask)
+    self.dsav['name_model'] = 'Layer'
+    self.dsav['tstart'] = self.tstart
+    
+    #For storing restart file
+    self.dsre = self.ds
+    self.dsre = self.dsre.assign_coords({'n':np.array([0,1,2])})
     
 def div0(a,b):
     return np.divide(a,b,out=np.zeros_like(a), where=b!=0)
@@ -427,9 +416,9 @@ def updatesecondary(self):
     
     #self.melt = self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
     
-    self.ustar = (self.Cd*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2+self.utide**2))**.5 * self.tmask
-    self.gamT = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0)+12.5*self.Pr**(2./3)-8.68) * self.tmask
-    self.gamS = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0)+12.5*self.Sc**(2./3)-8.68) * self.tmask
+    self.ustar = (self.Cdfac*self.Cd*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2+self.utide**2))**.5 * self.tmask
+    self.gamT = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0+1e-12)+12.5*self.Pr**(2./3)-8.68) * self.tmask
+    self.gamS = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0+1e-12)+12.5*self.Sc**(2./3)-8.68) * self.tmask
     self.That = (self.T[1,:,:]-self.l2-self.l3*self.zb).values * self.tmask
     self.Chat = self.cp*self.gamT/self.L
     self.melt = .5*(self.Chat*self.That - self.gamS + (np.maximum((self.gamS+self.Chat*self.That)**2 - 4*self.gamS*self.Chat*self.l1*self.S[1,:,:],0))**.5) * self.tmask
@@ -449,6 +438,10 @@ def updatesecondary(self):
     self.vyp1    = np.roll(self.v[1,:,:],1,axis=0)  
     self.uxp1    = np.roll(self.u[1,:,:],1,axis=1)      
 
+    #Additional entrainment to prevent D<minD
+    self.ent2 = np.maximum(0,self.minD-self.D[0,:,:]-(convT(self,self.D[1,:,:])-self.melt-self.entr)*2*self.dt)*self.tmask/(2*self.dt)
+    self.entr += self.ent2
+    
 def intD(self,delt):
     """Integrate D"""
     self.D[2,:,:] = self.D[0,:,:] \
@@ -503,27 +496,88 @@ def intS(self,delt):
                     +  self.Kh*lapT(self,self.S[0,:,:]) \
                     ),self.D[1,:,:]) * self.tmask * delt
 
-def printdiags(self):
-    """Print diagnostics at given intervals as defined below"""
-    #Maximum thickness
-    d0 = (self.D[1,:,:]*self.tmask).max()
-    #Average thickness [m]
-    d1 = div0((self.D[1,:,:]*self.tmask*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
-    #Maximum melt rate [m/yr]
-    d2 = 3600*24*365.25*self.melt.max()
-    #Average melt rate [m/yr]
-    d3 = 3600*24*365.25*div0((self.melt*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
-    #Minimum thickness
-    d4 = np.where(self.tmask==0,100,self.D[1,:,:]).min()
-    #Integrated volume thickness convergence == net in/outflow [Sv]
-    d5 = -1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
-    #Total heat content [TJ]
-    d7 = 1e-12*self.cp*self.rho0*(self.D[1,:,:]*(self.T[1,:,:]+2.)*self.tmask).sum()
-    #Total salt content [Gg]
-    d8 = 1e-9*self.rho0*(self.D[1,:,:]*self.S[1,:,:]*self.tmask).sum()
-    #Total kinetic energy [TJ]
-    d9 = 1e-12*.5*self.rho0*(self.D[1,:,:]*(im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)*self.dx*self.dy).sum()
+def savefields(self):
+    """Store time-average fields and save"""
+    self.dsav['U'] += im(self.u[1,:,:])
+    self.dsav['V'] += jm(self.v[1,:,:])
+    self.dsav['D'] += self.D[1,:,:]
+    self.dsav['T'] += self.T[1,:,:]
+    self.dsav['S'] += self.S[1,:,:]
+    self.dsav['melt'] += self.melt
+    self.dsav['entr'] += self.entr
+    self.count += 1
 
-    print(f'{self.time[self.t]:8.03f} days || {d1:7.03f} | {d0:8.03f} m || {d3: 7.03f} | {d2: 8.03f} m/yr || {d5: 6.03f} Sv || {d9: 8.03f} | {d7: 8.03f} TJ || {d8: 8.03f} Gg')
-              
-    return
+    if self.t in np.arange(self.saveint,self.nt+self.saveint,self.saveint):
+        """Output average fields"""
+        self.dsav['U'] *= 1./self.count
+        self.dsav['V'] *= 1./self.count
+        self.dsav['D'] *= 1./self.count
+        self.dsav['S'] *= 1./self.count
+        self.dsav['T'] *= 1./self.count
+        self.dsav['melt'] *= 3600*24*365.25/self.count
+        self.dsav['entr'] *= 3600*24*365.25/self.count
+
+        self.dsav['mav']  = 3600*24*365.25*(self.dsav.melt*self.dx*self.dy).sum()/(self.tmask*self.dx*self.dy).sum()
+        self.dsav['mmax'] = 3600*24*365.25*self.dsav.melt.max()            
+
+        self.dsav['tend'] = self.time[self.t]
+
+        self.dsav['filename'] = f"../../results/Layer/{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}_{self.dsav['tend'].values:.3f}"
+        self.dsav.to_netcdf(f"{self.dsav['filename'].values}.nc")
+        print(f'-------------------------------------------------------------------------------------')
+        print(f"{self.time[self.t]:8.03f} days || Average fields saved as {self.dsav['filename'].values}.nc")
+        print(f'-------------------------------------------------------------------------------------')
+        
+        """Set to zero"""
+        self.count = 0
+        self.dsav['U'] *= 0
+        self.dsav['V'] *= 0
+        self.dsav['D'] *= 0
+        self.dsav['T'] *= 0
+        self.dsav['S'] *= 0
+        self.dsav['melt'] *= 0
+        self.dsav['entr'] *= 0
+        self.dsav['tstart'] = self.time[self.t]
+
+def saverestart(self):
+    if self.t in np.arange(self.restint,self.nt+self.restint,self.restint):
+        """Output restart file"""
+        self.dsre['u'] = (['n','y','x'], self.u)
+        self.dsre['v'] = (['n','y','x'], self.v)
+        self.dsre['D'] = (['n','y','x'], self.D)
+        self.dsre['T'] = (['n','y','x'], self.T)
+        self.dsre['S'] = (['n','y','x'], self.S)
+        self.dsre['tend'] = self.time[self.t]
+        self.dsre.to_netcdf(f"../../results/Layer/restart/{self.ds['name_geo'].values}_{self.ds.attrs['name_forcing']}_{self.dsre['tend'].values:.3f}.nc")
+
+        print(f'-------------------------------------------------------------------------------------')
+        print(f"{self.time[self.t]:8.03f} days || Restart file saved")
+        print(f'-------------------------------------------------------------------------------------')
+        
+def printdiags(self):
+    if self.t in np.arange(self.diagint,self.nt+self.diagint,self.diagint):
+        """Print diagnostics at given intervals as defined below"""
+        #Maximum thickness
+        d0 = (self.D[1,:,:]*self.tmask).max()
+        #d0b = (np.where(self.tmask,self.D[1,:,:],100)).min()
+        #Average thickness [m]
+        d1 = div0((self.D[1,:,:]*self.tmask*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
+        #Maximum melt rate [m/yr]
+        d2 = 3600*24*365.25*self.melt.max()
+        #Average melt rate [m/yr]
+        d3 = 3600*24*365.25*div0((self.melt*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
+        #Minimum thickness
+        d4 = np.where(self.tmask==0,100,self.D[1,:,:]).min()
+        #Integrated entrainment [Sv]
+        d6 = 1e-6*(self.entr*self.tmask*self.dx*self.dy).sum()
+        d6b = 1e-6*(self.ent2*self.tmask*self.dx*self.dy).sum()
+        #Integrated volume thickness convergence == net in/outflow [Sv]
+        d5 = -1e-6*(convT(self,self.D[1,:,:])*self.tmask*self.dx*self.dy).sum()
+        #Average temperature [degC]
+        d7 = div0((self.D[1,:,:]*self.T[1,:,:]*self.tmask).sum(),(self.D[1,:,:]*self.tmask).sum())
+        #Average salinity [psu]
+        d8 = div0((self.D[1,:,:]*self.S[1,:,:]*self.tmask).sum(),(self.D[1,:,:]*self.tmask).sum())   
+        #Average speed [m/s]
+        d9 = div0((self.D[1,:,:]*(im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5*self.tmask).sum(),(self.D[1,:,:]*self.tmask).sum())
+
+        print(f'{self.time[self.t]:8.03f} days || {d1:7.03f} | {d0:8.03f} m || {d3: 7.03f} | {d2: 8.03f} m/yr || {d6:6.03f} {d6b:6.03f} | {d5: 6.03f} Sv || {d9: 6.03f} m/s || {d7: 8.03f} C || {d8: 8.03f} psu')
