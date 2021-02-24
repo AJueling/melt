@@ -58,7 +58,7 @@ class LayerModel(ModelConstants):
         self.dt   = 40          # Time step [s]
         
         self.cl   = 0.0245      # Parameter for Holland entrainment
-        self.Cdfac = .35        # Multiplication factor for drag in Ustar
+        self.Cdfac = .25        # Multiplication factor for drag in Ustar
         self.utide = 0.01       # RMS tidal velocity [m/s]
         self.Pr   = 13.8        # Prandtl number
         self.Sc   = 2432.       # Schmidt number
@@ -67,15 +67,15 @@ class LayerModel(ModelConstants):
         
         self.boundop = 2        # Option for boundary conditions D,T,S. [use 1 for isomip]
         self.minD = 1.          # Cutoff thickness [m]
-        self.maxD = 1000.       # Cutoff maximum thickness [m]
+        self.maxD = 3000.       # Cutoff maximum thickness [m]
         self.vcut = 1.414       # Cutoff velocity U and V [m/s]
         self.Dinit = 10.        # Initial uniform thickness [m]
         
         #Some parameters for displaying output
         self.diagday = .1       # Timestep at which to print diagnostics
         self.verbose = True
-        self.saveday = 1        # Interval at which to save time-average fields [days]
-        self.restday = 1        # Interval at which to save restart file [days]
+        self.saveday = 10        # Interval at which to save time-average fields [days]
+        self.restday = 10        # Interval at which to save restart file [days]
         
     def integrate(self):
         """Integration of 2 time steps, now-centered Leapfrog scheme"""
@@ -566,8 +566,8 @@ def printdiags(self):
         d2 = 3600*24*365.25*self.melt.max()
         #Average melt rate [m/yr]
         d3 = 3600*24*365.25*div0((self.melt*self.dx*self.dy).sum(),(self.tmask*self.dx*self.dy).sum())
-        #Minimum thickness
-        d4 = np.where(self.tmask==0,100,self.D[1,:,:]).min()
+        #Meltwater fraction [%]
+        d4 = 100.*(self.melt*self.tmask*self.dx*self.dy).sum()/((self.melt+self.entr)*self.tmask*self.dx*self.dy).sum()
         #Integrated entrainment [Sv]
         d6 = 1e-6*(self.entr*self.tmask*self.dx*self.dy).sum()
         d6b = 1e-6*(self.ent2*self.tmask*self.dx*self.dy).sum()
@@ -580,4 +580,4 @@ def printdiags(self):
         #Average speed [m/s]
         d9 = div0((self.D[1,:,:]*(im(self.u[1,:,:])**2 + jm(self.v[1,:,:])**2)**.5*self.tmask).sum(),(self.D[1,:,:]*self.tmask).sum())
 
-        print(f'{self.time[self.t]:8.03f} days || {d1:7.03f} | {d0:8.03f} m || {d3: 7.03f} | {d2: 8.03f} m/yr || {d6:6.03f} {d6b:6.03f} | {d5: 6.03f} Sv || {d9: 6.03f} m/s || {d7: 8.03f} C || {d8: 8.03f} psu')
+        print(f'{self.time[self.t]:8.03f} days || {d1:7.03f} | {d0:8.03f} m || {d3: 7.03f} | {d2: 8.03f} m/yr || {d4:6.03f} % || {d6:6.03f} {d6b:6.03f} | {d5: 6.03f} Sv || {d9: 6.03f} m/s || {d7: 8.03f} C || {d8: 8.03f} psu')

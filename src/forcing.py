@@ -61,7 +61,7 @@ class Forcing(ModelConstants):
         self.ds.attrs['name_forcing'] = f'tanh_Tdeep{Tdeep:.1f}_ztcl{ztcl}'
         return self.ds
     
-    def tanh2(self, ztcl, Tdeep, drhodz=.6/720, T0 = -1.5):
+    def tanh2(self, ztcl, Tdeep, drhodz=.6/720, T0 = -1.7):
         """ creates tanh thermocline forcing profile
         input:
         ztcl    ..  (float)  [m]       thermocline depth
@@ -79,7 +79,7 @@ class Forcing(ModelConstants):
         self.ds = self.calc_fields()
         self.ds.attrs['name_forcing'] = f'tanh2_Tdeep{Tdeep:.1f}_ztcl{ztcl}'
         return self.ds
-
+    
     def favier(self, profile):
         """ piecewise linear profiles suggested by Favier et al. (2019), using potential temperature """
         assert profile in ['cold0', 'cold1', 'warm0', 'warm1', 'warm2', 'warm3']
