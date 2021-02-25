@@ -11,6 +11,7 @@ import geopandas
 import matplotlib
 import matplotlib.pyplot as plt
 
+from scipy import stats, interpolate
 from advect import advect_grl
 from constants import ModelConstants
 from scipy.ndimage import gaussian_filter
@@ -244,6 +245,64 @@ class RealGeometry(ModelConstants):
                         da_[:,j] = da_.where(da_.y<y).values[:,j]
         return da_
     
+    def dgrl_along_streamlines(self):
+        """ calculate the distance to the grounding line along streamlines by
+        1. advect particles from groudning line forward while remembering distance
+        2. bin results to grid
+        3. diffuse distance into areas that no particles reached
+        """
+        ds_ = self.ds.reindex(y=self.ds.y[::-1])
+        
+        # [step 1] create and advect distance particles
+        T = 100000 # yrs
+        Nt = 500 # number of timesteps
+        dt = T/Nt
+
+        # initialize particles at grounding line
+        x = ds_.x.where(ds_.grl).T.values.flatten()
+        y = ds_.y.where(ds_.grl).values.flatten()
+        x, y = x[~np.isnan(x)], y[~np.isnan(y)]
+        assert len(x)==len(y)
+        N = len(x)
+        X = np.zeros((N,Nt))
+        X[:,0] = x
+        Y = np.zeros((N,Nt))
+        Y[:,0] = y
+        D = np.zeros((N,Nt))
+        xmax, xmin = np.max(ds_.x.values), np.min(ds_.x.values)
+        ymax, ymin = np.max(ds_.y.values), np.min(ds_.y.values)
+
+        # interpolation function for velocity components
+        vel = np.sqrt(ds_.u**2+ds_.v**2)
+        u = ds_.u/vel
+        v = ds_.v/vel
+        ui = interpolate.RectBivariateSpline(ds_.y, ds_.x, xr.where(vel>0,u,0))  #(y,x)
+        vi = interpolate.RectBivariateSpline(ds_.y, ds_.x, xr.where(vel>0,v,0))  #(y,x)
+
+        # advection 
+        
+        for i in tqdm(range(1,Nt)):
+            # interpolate velocity for positions
+            uxy = ui.ev(np.array(Y[:,i-1]), np.array(X[:,i-1]))
+            vxy = vi.ev(np.array(Y[:,i-1]), np.array(X[:,i-1]))
+            # advect for dt
+            X[:,i] = X[:,i-1] + dt*uxy
+            Y[:,i] = Y[:,i-1] + dt*vxy
+            D[:,i] = D[:,i-1] + dt*np.sqrt(uxy**2 + vxy**2)
+
+        # [step 2] binning of disntance particles into model grid
+        dx, dy = ds_.x[1]-ds_.x[0], ds_.y[1]-ds_.y[0]
+        binx = np.arange(ds_.x[0]-dx/2,ds_.x[-1]+dx, dx)
+        biny = np.arange(ds_.y[0]-dy/2,ds_.y[-1]+dy, dy)
+        dgrl_ = stats.binned_statistic_2d(x=X.flatten(), y=Y.flatten(), values=D.flatten(), statistic='mean', bins=[binx, biny]).statistic.T
+        dgrl = xr.DataArray(data=dgrl_, dims=('y','x'), coords={'y':ds_.y,'x':ds_.x})
+
+        # [step 3] diffusion into areas where no disntance particles where advected
+        missing = xr.where(np.isnan(dgrl),1,0)
+        dgrl = RealGeometry.diffuse_into(xr.where(np.isnan(dgrl),0,dgrl), missing).where(ds_.mask==3)
+
+        return dgrl
+
     def find_distances(self):
         """ calculate minimum distances to ice shelf front / grounding line
         
@@ -253,9 +312,12 @@ class RealGeometry(ModelConstants):
         rd    .. relative distance from grounding line
         """
         self.ds['dglm'] = RealGeometry.distance_to_line(self.ds.mask, self.ds.grl)
-        self.ds['dgrl'] = self.ds.dglm.copy()
         self.ds.dglm.attrs = {'long_name':'minimum distance to grounding line', 'units':'m'}
-        self.ds.dgrl.attrs = {'long_name':'minimum distance to grounding line', 'units':'m'}
+
+        # self.ds['dgrl'] = self.ds.dglm.copy()
+        self.ds['dgrl'] = self.dgrl_along_streamlines()
+        self.ds.dgrl.attrs = {'long_name':'distance to grounding line along streamlines', 'units':'m'}
+
         self.ds['disf'] = RealGeometry.distance_to_line(self.ds.mask, self.ds.isf)
         self.ds.disf.attrs = {'long_name':'minimum distance to ice shelf front', 'units':'m'}
         self.ds['rd'] = self.ds.dglm/(self.ds.dglm+self.ds.disf)
@@ -335,33 +397,36 @@ class RealGeometry(ModelConstants):
         # exists = (xr.where(self.ds.u**2+self.ds.v**2>0,1,0)*xr.where(np.isnan(self.ds.draft),0,1))
         missing = (xr.where(self.ds.u**2+self.ds.v**2>0,0,1)*xr.where(np.isnan(self.ds.draft),0,1))
         
-        # plt.figure()
-        # missing.plot()
-
         if missing.sum().values>0:
             print('need to extend velocity')
-            u = xr.where(np.isnan(self.ds.u.where(self.ds.mask==3)),0,self.ds.u)#
-            v = xr.where(np.isnan(self.ds.v.where(self.ds.mask==3)),0,self.ds.v)#
-            u_new = u+missing
-            v_new = v+missing
-            for t in tqdm(range(2000)):
-                u_new = gaussian_filter(u_new, sigma=2, mode='reflect')
-                v_new = gaussian_filter(v_new, sigma=2, mode='reflect')
-                u_new = xr.where(missing==0, u, u_new)
-                v_new = xr.where(missing==0, v, v_new)
-
-            # plt.figure()
-            # u_new.plot()
-
-            # plt.figure()
-            # self.ds.u.plot()
-            self.ds['u'] = u_new.where(np.isfinite(self.ds.draft))
-            self.ds['v'] = v_new.where(np.isfinite(self.ds.draft))
-            # plt.figure()
-            # self.ds.u.plot()
+            u = xr.where(np.isnan(self.ds.u.where(self.ds.mask==3)),0,self.ds.u)
+            v = xr.where(np.isnan(self.ds.v.where(self.ds.mask==3)),0,self.ds.v)
+            self.ds['u'] = RealGeometry.diffuse_into(u, missing).where(np.isfinite(self.ds.draft))
+            self.ds['v'] = RealGeometry.diffuse_into(v, missing).where(np.isfinite(self.ds.draft))
+            # u_new = u+missing
+            # v_new = v+missing
+            # for t in tqdm(range(2000)):
+            #     u_new = gaussian_filter(u_new, sigma=2, mode='reflect')
+            #     v_new = gaussian_filter(v_new, sigma=2, mode='reflect')
+            #     u_new = xr.where(missing==0, u, u_new)
+            #     v_new = xr.where(missing==0, v, v_new)
+            # self.ds['u'] = u_new.where(np.isfinite(self.ds.draft))
+            # self.ds['v'] = v_new.where(np.isfinite(self.ds.draft))
         else:
-            print('no need to expand velosity')
+            print('no need to expand velocity')
         return
+    
+    @staticmethod
+    def diffuse_into(da, missing):
+        """ 
+        da      .. DataArray with known values and 0's everywhere else 
+        missing .. boolean mask with 0 on kown/fixed values, 1 unknown/to be diffused into
+        """
+        da_new = da+missing
+        for t in tqdm(range(2000)):
+            da_new = gaussian_filter(da_new, sigma=2, mode='reflect')
+            da_new = xr.where(missing==0, da, da_new)
+        return da_new
 
     def adv_grl(self):
         """ solves advection-diffusion equation as described in Pelle et al. (2019)
@@ -470,15 +535,15 @@ class RealGeometry(ModelConstants):
             self.select_geometry()  # creates self.ds from BedMachine data
             self.calc_draft()
             self.calc_p()
+            self.interpolate_velocity()
+            self.extend_velocity()
             self.determine_grl_isf()
             self.find_distances()
             self.add_latlon()
             self.define_boxes()
             self.calc_area()
-            self.interpolate_velocity()
             # plt.figure()
             # self.ds.u.plot()
-            self.extend_velocity()
             # plt.figure()
             # self.ds.u.plot()
             self.adv_grl()
