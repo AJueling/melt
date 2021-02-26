@@ -58,7 +58,7 @@ class LayerModel(ModelConstants):
         self.dt   = 40          # Time step [s]
         
         self.cl   = 0.0245      # Parameter for Holland entrainment
-        self.Cdfac = .25        # Multiplication factor for drag in Ustar
+        self.Cdtop= .0008       # Drag coefficient in Ustar
         self.utide = 0.01       # RMS tidal velocity [m/s]
         self.Pr   = 13.8        # Prandtl number
         self.Sc   = 2432.       # Schmidt number
@@ -416,7 +416,7 @@ def updatesecondary(self):
     
     #self.melt = self.cp/self.L*self.CG*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2)**.5*(self.T[1,:,:]-self.Tf) * self.tmask
     
-    self.ustar = (self.Cdfac*self.Cd*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2+self.utide**2))**.5 * self.tmask
+    self.ustar = (self.Cdtop*(im(self.u[1,:,:])**2+jm(self.v[1,:,:])**2+self.utide**2))**.5 * self.tmask
     self.gamT = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0+1e-12)+12.5*self.Pr**(2./3)-8.68) * self.tmask
     self.gamS = self.ustar/(2.12*np.log(self.ustar*self.D[1,:,:]/self.nu0+1e-12)+12.5*self.Sc**(2./3)-8.68) * self.tmask
     self.That = (self.T[1,:,:]-self.l2-self.l3*self.zb).values * self.tmask
