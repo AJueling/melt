@@ -15,9 +15,11 @@ src/bilinear*.nc
 src/ipynb  # notebook containing output cells
 src/ipynb/*.ipynb
 src/ipynb/*.nc
+src/ipynb/old/*
 src/ipynb/bilinear*.nc
 src/test.py
 figures/*
+to_andre/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

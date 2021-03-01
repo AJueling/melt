@@ -100,12 +100,12 @@ def prettyplot(dsav,figsize=(10,10)):
     cbar.set_label('Melt [m/yr]', fontsize=21, labelpad=-2)
     
     if ds['name_model'] == 'Layer':
-        U = ds['U'].values
-        V = ds['V'].values
+        U = ds['U'].values*ds['D'].values
+        V = ds['V'].values*ds['D'].values
         
         spd = (U**2 + V**2)**.5
-        lw = 4*spd/spd.max()
-        strm = ax.streamplot(x,y,U,V,linewidth=lw,color='w',density=5,arrowsize=.5)
+        lw = .04*spd
+        strm = ax.streamplot(x,y,U,V,linewidth=lw,color='w',density=8,arrowsize=0)
 
     ax.set_xticks([])
     ax.set_yticks([])
