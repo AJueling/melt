@@ -33,8 +33,11 @@ glaciers = ['Amery',
             'Totten',
             'MoscowUniversity',
             'Ross',
-            'Dotson', 
+            'Getz',
+            'Dotson',   # this is really Crosson-Dotson without small outlet galicers from island
+            'CrossDots', 
             'Thwaites',
+            'Thwaites_e',
             'PineIsland',
             'FilchnerRonne',
            ]
@@ -42,12 +45,14 @@ coarse_resolution = ['Ross', 'FilchnerRonne']
 # total advection time  [yrs]
 T_adv = {'Totten'          : 400,
          'MoscowUniversity': 400,
-         'Thwaites'        : 200, 
+         'Thwaites'        : 200,
+         'Getz'            : 1000,
         }
 # ice shelves not listes in PICO publication
 # n from Fig. 3, Ta/Sa from Fig. 2;                             # drainage basin
 noPICO = {'MoscowUniversity': {'n':2, 'Ta':-0.73, 'Sa':34.73},  #  8
           'Dotson'          : {'n':2, 'Ta':+0.47, 'Sa':34.73},  # 14
+          'CrossDots'       : {'n':2, 'Ta':+0.47, 'Sa':34.73},  # 14
          }
 # Table 2 of Reese et al. (2018)
 table2 = pd.read_csv(f'{path}/doc/Reese2018/Table2.csv', index_col=0)
@@ -91,8 +96,9 @@ class RealGeometry(ModelConstants):
         self.fn_evo = f'{path}/results/advection/{name}_evo.nc'
         self.fn_isf = f'{path}/data/mask_polygons/{name}_isf.geojson'
         self.fn_grl = f'{path}/data/mask_polygons/{name}_grl.geojson'
+        self.fn_grl2 = f'{path}/data/mask_polygons/{name}_grl2.geojson'
         self.fn_outline = f'{path}/data/mask_polygons/{name}_polygon.geojson'
-        for fn in [self.fn_outline, self.fn_grl, self.fn_isf]:
+        for fn in [self.fn_outline, self.fn_grl, self.fn_grl2, self.fn_isf]:
             assert os.path.exists(fn), f'file does not exists:  {fn}'
         return
     
@@ -145,9 +151,10 @@ class RealGeometry(ModelConstants):
 
         def find_grl_isf(line):
             """ finds mask boundaries and selects points within polygon in geojson files """
-            assert line in ['grl', 'isf']
-            if line=='grl':    diff, fn = 1, self.fn_grl
-            elif line=='isf':  diff, fn = 3, self.fn_isf
+            assert line in ['grl', 'grl2', 'isf']
+            if line=='grl':     diff, fn = 1, self.fn_grl
+            elif line=='grl2':  diff, fn = 1, self.fn_grl2
+            elif line=='isf':   diff, fn = 3, self.fn_isf
             poly = geopandas.read_file(fn, crs='espg:3031')
             new = xr.where(mask-mask.shift(x= 1)==diff, mask, 0) + \
                   xr.where(mask-mask.shift(x=-1)==diff, mask, 0) + \
@@ -162,14 +169,16 @@ class RealGeometry(ModelConstants):
             return new
 
         grl  = find_grl_isf('grl')
-        grl.attrs = {'long_name':'grounding line mask'}
+        grl.attrs = {'long_name':'grounding line mask continent only'}
+        grl2  = find_grl_isf('grl2')
+        grl2.attrs = {'long_name':'grounding line mask including islands'}
         isf  = find_grl_isf('isf')
         isf.attrs = {'long_name':'ice shelf front mask'}
         # now new `mask`: ice shelf = 1, rest = 0
         # mask = xr.where(self.ds['mask']==3, 1, 0)
         # self.ds = self.ds.rename({'mask':'mask_orig'})
         # self.ds = self.ds.drop('mask')
-        self.ds = xr.merge([self.ds, grl, isf])
+        self.ds = xr.merge([self.ds, grl, grl2, isf])
         return
 
     @staticmethod
@@ -443,7 +452,8 @@ class RealGeometry(ModelConstants):
         # evo.to_netcdf(self.fn_evo)
 
         self.ds['grl_adv'] = evo.isel(time=-1).drop('time')
-        self.ds['grl_adv'] = RealGeometry.smoothen(da=self.ds.grl_adv, sigma=1)
+        self.ds['grl_adv'] = xr.where(self.ds.draft-self.ds.grl_adv<0, self.ds.draft, self.ds.grl_adv)
+        self.ds['grl_adv'] = RealGeometry.smoothen(da=self.ds.grl_adv, sigma=1)  # smoothen standing wave/checkerboard patterns
         self.ds.attrs = {'long_name':'advected groundling line depth', 'units':'m'}
         return
 
@@ -486,9 +496,10 @@ class RealGeometry(ModelConstants):
             D = self.ds.draft
         else:  # smoothing `draft` with a rolling mean first
             # D = (self.ds.draft.rolling(x=5).mean(skipna=True)+self.ds.draft.rolling(y=5).mean(skipna=True))/2
-            D = RealGeometry.smoothen(self.ds.draft)
+            D = RealGeometry.smoothen(self.ds.draft, sigma=10)
+            
         dx, dy = D.x[1]-D.x[0], D.y[1]-D.y[0]
-        print(dx, dy)
+#         print(dx, dy)
         dxdy = abs((D.y-D.y.shift(y=1))*(D.x-D.x.shift(x=1)))
         ip, im = D.shift(x=-1), D.shift(x= 1)
         jp, jm = D.shift(y=-1), D.shift(y= 1)
@@ -629,8 +640,9 @@ if __name__=='__main__':
     if len(sys.argv)>2:  # if glacier is named, only calculate geometry for this one
         glacier = sys.argv[2]
         assert glacier in glaciers, f'input {glacier} not recognized, must be in {glaciers}'
-        RealGeometry(name=glacier).create(new=new)
+        RealGeometry(name=glacier, n=5).create(new=new)
     else:  # calculate geometry for all glaciers
         for i, glacier in enumerate(glaciers):
             if i in [0,3,7]:  continue
             RealGeometry(name=glacier).create(new=new)
+    

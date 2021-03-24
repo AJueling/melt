@@ -1,5 +1,5 @@
 class ModelConstants(object):
-    """ shared functions for different melt models
+    """ shared parameters for different melt models
     
     init: defines all constants used in 
     - PICO   Reese et al. (2018)
@@ -36,8 +36,8 @@ class ModelConstants(object):
         # Plume model (from Table 1)
         self.l1     = -5.73e-2  # [degC/psu]  freezing point salinity coefficient
         self.l2     = 8.32e-2   # [degC]      freezing point offset
-        self.l3     = 7.61e-4   # [degC/m]    freezing point depth coefficient
-        self.Ce     = 0.6       # [1]         slope correction factor
+        self.l3     = 7.61e-4   # [degC/m]    freezing point depth coefficientqgis
+        self.Ce     = 0.6       # [1]         slope correction factor ("give[s] the best match between the analytical expression and the numerical solution of (23)")
         self.E0     = 3.6e-2    # [1]         entrainment coefficient
         self.CG     = 5.9e-4    # [1]         effective thermal Stanton number
         self.ct     = 1.4e-5    # [1]         c_{tau}

@@ -14,7 +14,7 @@ def advect_grl(ds, eps, T, verbose=True, plots=True):
     input:
     ds  .. [xr.DataSet]     containing
                             x/y   .. grid coordinates of size nx/ny [m]
-                            grl   .. binary mask identifying grounding line 
+                            grl2  .. binary mask identifying grounding line including islands
                             draft .. includes grl depth at grl mask [m]
                             u/v   .. x/y velocities  [m/yr]
     T   .. [int]            number of years to run
@@ -54,7 +54,7 @@ def advect_grl(ds, eps, T, verbose=True, plots=True):
                        coords={'y':ds.y, 'x':ds.x, 'time':np.arange(0,dt*Nt-1e-10,dt)}
                       )
     # domain mask of points inside ice shelf, but outside of grl
-    mask_ = ds.mask.where(ds.grl==0)
+    mask_ = ds.mask.where(ds.grl2==0)
     ds['u'] = xr.where(ds.mask, ds.u, 0)
     ds['v'] = xr.where(ds.mask, ds.v, 0)
     
@@ -62,7 +62,7 @@ def advect_grl(ds, eps, T, verbose=True, plots=True):
     # in ice shelf set depth to minimum draft depth
     evo[:,:,0] = xr.where(ds.mask==3, draftmin, 0)
     #  at grl set depth to draft
-    evo[:,:,0] = xr.where(ds.grl==1, ds.draft, evo[:,:,0])  
+    evo[:,:,0] = xr.where(ds.grl2==1, ds.draft, evo[:,:,0])  
     
     def reset_pads(z):
         """ resets padding values
@@ -97,7 +97,8 @@ def advect_grl(ds, eps, T, verbose=True, plots=True):
         evo[:,:,t] = evo_ + dt*(k1+2*(k2+k3)+k4)/6       
         
         # update boundary conditions
-        evo[:,:,t] = xr.where(ds.grl==1 , ds.draft, evo[:,:,t])  # grl depth constant
+        evo[:,:,t] = xr.where(ds.draft<evo[:,:,t], ds.draft, evo[:,:,t])  # if draft deeper, replace evo with draft
+        evo[:,:,t] = xr.where(ds.grl2==1 , ds.draft, evo[:,:,t])           # grl depth constant
         evo[:,:,t] = reset_pads(evo[:,:,t])
         evo[:,:,t] = xr.where(evo[:,:,t]<draftmin, draftmin, evo[:,:,t])  #
         evo[:,:,t] = xr.where(evo[:,:,t]>draftmax, draftmax, evo[:,:,t])  #
