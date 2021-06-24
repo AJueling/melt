@@ -6,7 +6,7 @@
 1. Plume: analytical approximtation of the 1D plume model (Lazeroms _et al._ (2019))
 1. PICO: box model of cavity circulation (Reese _et al._ (2018))
 1. PICOP: combination the two abovementioned models (Pelle _et al._ (2019))
-1. 2D Layer model (Hellmer _et al._ (1989))
+1. Layer: 2D (vertically integratd) plume model (Hellmer _et al._ (1989))
 ### Example Ice Shelf: Totten Glacier
 
 <img src="results/Bedmachine/TottenIS_geometry.png">
@@ -84,14 +84,15 @@ melt
 
 <img src="results/example/Simple_tanh_test3.png">
 
-__Figure 2:__ The results from following the example above: applying the `Simple` melt parametrizations on the `test3` with a `tanh` forcing profile. The draft (a) is given, the hydrostatic pressure (b) is linearly related, the mask (c) specifies grounding line (2), ice shelf (3), and ice shelf front (0), the number of boxes is given but the distribution (d) is calculated.
+__Figure 2:__ The results from following the example above: applying the `Simple` melt parametrizations on the `test3` with a `tanh` forcing profile.
+The draft (a) is prescribed, the hydrostatic pressure (b) is linearly related, the mask (c) specifies grounding line (2), ice shelf (3), and ice shelf front (0), the number of boxes is given but the distribution (d) is calculated.
 Panels (e-g) show quantities needed for one or more melt model: the local slope angle along the flowline (here simply left to right), the distance to the grounding line, and the depth at the plume origin.
 Panel (h) shows the local freezing point, (i/j) the spatial distribution of temperature and salinity, (k/l) the temperature and salinity depth profiles.
 Panel (m) shows the thermal forcing (temperature minus local freezing point).
 Finally (n-p) show the three simple melt parameterizations: the local linear, local quadratic, and non-local quadratic ones, respectively
 
 ## Disclaimer
-This is work in progress and we do not guarantee anything. 
+This is work in progress and we do not guarantee anything. Contact us if you have questions, and if you find this useful also let us know.
 
 ## References
 > Favier,  Lionel et al.  (June  2019a). “Assessment of  sub-shelf melting  parameterisations using  the ocean–ice-sheet coupled model NEMO(v3.6)–Elmer/Ice(v8.3)”. Geoscientific  Model  Development 12.6., pp. 2255–2283.doi:10.5194/gmd-12-2255-2019.
