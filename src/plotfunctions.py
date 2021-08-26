@@ -41,10 +41,10 @@ def makebackground2(ax):
     gl.xlocator = mpl.ticker.FixedLocator(np.arange(-180,179,5))
     gl.ylocator = mpl.ticker.FixedLocator(np.arange(-89,89))    
     
-def plotmelt(ax,lon,lat,melt):
+def plotmelt(ax,lon,lat,melt,vmax=200):
     cmap = plt.get_cmap('inferno')
     melt = np.where(melt>0,melt,np.nan)
-    IM = ax.pcolormesh(lon,lat,melt,vmin=1,vmax=200,norm=mpl.colors.LogNorm(),cmap=cmap,transform=ccrs.PlateCarree(),shading='nearest')
+    IM = ax.pcolormesh(lon,lat,melt,vmin=1,vmax=vmax,norm=mpl.colors.LogNorm(),cmap=cmap,transform=ccrs.PlateCarree(),shading='nearest')
     return IM
 
 def plotnormmelt(ax,lon,lat,melt):
